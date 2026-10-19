@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f2a43">
+<title>Aidat — Bina Gelir Gider</title>
+<meta name="author" content="Cemal Solmaz">
+<meta name="copyright" content="© 2026 Cemal Solmaz — Tüm hakları saklıdır.">
+<meta name="description" content="Bina aidat, gelir-gider takip programı. © 2026 Cemal Solmaz.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Aidat">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ ÖZET ============ -->
+  <section class="view" id="v-ozet">
+    <header class="top">
+      <div>
+        <div class="eyebrow" id="ozet-bina">Bina</div>
+        <h1>Özet</h1>
+      </div>
+      <div class="monthnav">
+        <button class="iconbtn" id="ay-geri" aria-label="Önceki ay">‹</button>
+        <span id="ay-adi">Ekim 2026</span>
+        <button class="iconbtn" id="ay-ileri" aria-label="Sonraki ay">›</button>
+      </div>
+      <button class="iconbtn exit" id="btn-cikis" aria-label="Kaydet ve çık" title="Kaydet ve çık">
+        <svg viewBox="0 0 24 24"><path d="M10 17l1.4-1.4-2.6-2.6H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zM4 3h8v2H6v14h6v2H4V3z"/></svg>
+      </button>
+    </header>
+
+    <div class="card savecard" id="kayit-durum">
+      <span class="dot ok" id="kayit-dot"></span>
+      <div class="main">
+        <div class="t1">Bilgiler kayıtlı</div>
+        <div class="t2" id="kayit-zaman">Değişiklikler otomatik kaydedilir</div>
+      </div>
+      <button class="mini" id="btn-kaydet-cik">Kaydet &amp; çık</button>
+    </div>
+
+    <div class="cards">
+      <div class="card green">
+        <div class="clabel">Tahsil edilen</div>
+        <div class="cval" id="k-tahsil">0 ₺</div>
+        <div class="csub" id="k-tahsil-sub">0 / 0 daire</div>
+      </div>
+      <div class="card red">
+        <div class="clabel">Gider</div>
+        <div class="cval" id="k-gider">0 ₺</div>
+        <div class="csub" id="k-gider-sub">0 kayıt</div>
+      </div>
+      <div class="card blue">
+        <div class="clabel">Net bakiye</div>
+        <div class="cval" id="k-net">0 ₺</div>
+        <div class="csub" id="k-net-sub">tahsil − gider</div>
+      </div>
+      <div class="card amber">
+        <div class="clabel">Bekleyen aidat</div>
+        <div class="cval" id="k-bekleyen">0 ₺</div>
+        <div class="csub" id="k-bekleyen-sub">0 daire</div>
+      </div>
+      <div class="card teal">
+        <div class="clabel">Dükkan geliri</div>
+        <div class="cval" id="k-dukkan">0 ₺</div>
+        <div class="csub" id="k-dukkan-sub">0 dükkan · kasaya dahil</div>
+      </div>
+    </div>
+
+    <div class="progresswrap">
+      <div class="prow"><span>Tahsilat oranı</span><b id="oran">%0</b></div>
+      <div class="bar"><i id="oran-bar"></i></div>
+    </div>
+
+    <h2 class="sect">Kasa</h2>
+    <div class="panel kasa">
+      <div><span>Devreden kasa</span><b id="kasa-devreden">0 ₺</b></div>
+      <div><span>Kasa toplam</span><b id="kasa-toplam">0 ₺</b></div>
+    </div>
+
+    <h2 class="sect">Ödenmeyen daire / dükkanlar</h2>
+    <div id="ozet-borc"></div>
+
+    <h2 class="sect">Son hareketler</h2>
+    <div id="ozet-son"></div>
+
+    <p class="telif">© 2026 Cemal Solmaz · Tüm hakları saklıdır.<br>
+      <button class="linkbtn" id="link-lisans">Lisans bilgileri</button></p>
+  </section>
+
+  <!-- ============ AİDAT ============ -->
+  <section class="view" id="v-aidat" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Aylık aidat</div>
+        <h1 id="aidat-ay">Ekim 2026</h1>
+      </div>
+      <div class="monthnav">
+        <button class="iconbtn" id="a-geri" aria-label="Önceki ay">‹</button>
+        <button class="iconbtn" id="a-ileri" aria-label="Sonraki ay">›</button>
+      </div>
+    </header>
+
+    <div class="tabs" id="aidat-tabs">
+      <button class="tab on" data-tip="daire">Daireler</button>
+      <button class="tab" data-tip="dukkan">Dükkanlar</button>
+    </div>
+
+    <div class="panel row">
+      <div>
+        <div class="clabel" id="aidat-baslik">Bu ayın aidatı</div>
+        <div class="cval sm" id="aidat-tutar">0 ₺</div>
+      </div>
+      <button class="btn" id="btn-toplu">Tümünü tahsil et</button>
+    </div>
+
+    <div id="aidat-liste" class="list"></div>
+  </section>
+
+  <!-- ============ GİDER ============ -->
+  <section class="view" id="v-gider" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Giderler</div>
+        <h1 id="gider-ay">Ekim 2026</h1>
+      </div>
+      <div class="monthnav">
+        <button class="iconbtn" id="g-geri" aria-label="Önceki ay">‹</button>
+        <button class="iconbtn" id="g-ileri" aria-label="Sonraki ay">›</button>
+      </div>
+    </header>
+
+    <div class="panel row">
+      <div>
+        <div class="clabel">Bu ayın gideri</div>
+        <div class="cval sm red-text" id="gider-toplam">0 ₺</div>
+      </div>
+      <button class="btn danger" id="btn-gider-ekle">+ Gider</button>
+    </div>
+
+    <div id="gider-liste" class="list"></div>
+  </section>
+
+  <!-- ============ BORÇ DURUMU ============ -->
+  <section class="view" id="v-borc" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Daire borçları</div>
+        <h1>Borç Durumu</h1>
+      </div>
+    </header>
+
+    <div class="cards">
+      <div class="card red">
+        <div class="clabel">Toplam borç</div>
+        <div class="cval" id="b-toplam">0 ₺</div>
+        <div class="csub" id="b-toplam-sub">0 daire</div>
+      </div>
+      <div class="card green">
+        <div class="clabel">Borcu olmayan</div>
+        <div class="cval" id="b-temiz">0</div>
+        <div class="csub" id="b-temiz-sub">daire</div>
+      </div>
+    </div>
+
+    <div class="tabs" id="borc-tip-tabs">
+      <button class="tab on" data-tip="daire">Daireler</button>
+      <button class="tab" data-tip="dukkan">Dükkanlar</button>
+    </div>
+
+    <div class="tabs" id="borc-tabs">
+      <button class="tab on" data-b="acik">Açık borçlar</button>
+      <button class="tab" data-b="gecmis">Geçmiş aylar</button>
+      <button class="tab" data-b="tumu">Tüm daireler</button>
+    </div>
+
+    <div id="borc-liste" class="list"></div>
+  </section>
+
+  <!-- ============ RAPOR ============ -->
+  <section class="view" id="v-rapor" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Son 12 ay</div>
+        <h1>Rapor</h1>
+      </div>
+      <button class="iconbtn exit" id="btn-rapor-cikis" aria-label="Kaydet ve çık" title="Kaydet ve çık">
+        <svg viewBox="0 0 24 24"><path d="M10 17l1.4-1.4-2.6-2.6H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zM4 3h8v2H6v14h6v2H4V3z"/></svg>
+      </button>
+    </header>
+
+    <div class="cards">
+      <div class="card green">
+        <div class="clabel">12 aylık gelir</div>
+        <div class="cval" id="r-gelir">0 ₺</div>
+        <div class="csub" id="r-gelir-sub">aidat tahsilatı</div>
+      </div>
+      <div class="card red">
+        <div class="clabel">12 aylık gider</div>
+        <div class="cval" id="r-gider">0 ₺</div>
+        <div class="csub" id="r-gider-sub">0 kayıt</div>
+      </div>
+    </div>
+    <div class="progresswrap" style="margin-top:10px">
+      <div class="prow"><span>12 aylık net</span><b id="r-net">0 ₺</b></div>
+      <div class="prow" style="margin-top:6px"><span>Ortalama aylık gider</span><b id="r-ort">0 ₺</b></div>
+    </div>
+
+    <div class="tabs" id="rapor-tabs">
+      <button class="tab on" data-r="ozet">Tablo</button>
+      <button class="tab" data-r="grafik">Grafik</button>
+      <button class="tab" data-r="kalem">Kalemler</button>
+      <button class="tab" data-r="dukkan">Dükkanlar</button>
+    </div>
+
+    <div id="rapor-icerik"></div>
+
+    <div class="btnrow" style="margin-top:16px">
+      <button class="btn ghost" id="btn-rapor-kopyala">Raporu metin olarak paylaş</button>
+    </div>
+  </section>
+
+  <!-- ============ DAİRELER ============ -->
+  <section class="view" id="v-daire" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Bina yönetimi</div>
+        <h1>Daireler</h1>
+      </div>
+      <button class="btn ghost" id="btn-dukkan-toplu" hidden style="padding:11px 12px">Toplu dükkan</button>
+      <button class="btn" id="btn-daire-ekle">+ Daire</button>
+      <button class="iconbtn exit" id="btn-cikis2" aria-label="Kaydet ve çık" title="Kaydet ve çık">
+        <svg viewBox="0 0 24 24"><path d="M10 17l1.4-1.4-2.6-2.6H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zM4 3h8v2H6v14h6v2H4V3z"/></svg>
+      </button>
+    </header>
+
+    <div class="tabs" id="daire-tabs">
+      <button class="tab on" data-t="liste">Daireler</button>
+      <button class="tab" data-t="giderler">Gider kalemleri</button>
+      <button class="tab" data-t="ayarlar">Ayarlar</button>
+    </div>
+
+    <div class="tabs" id="unit-tabs">
+      <button class="tab on" data-u="daire">Daireler</button>
+      <button class="tab" data-u="dukkan">Dükkanlar</button>
+    </div>
+    <p class="hint" id="unit-ozet"></p>
+    <div id="daire-liste"></div>
+
+    <div id="daire-giderler" hidden>
+      <p class="hint">Gider eklerken kalem adını kendin yazabilirsin; buradaki liste sadece kısayol/öneri listesidir.</p>
+      <div id="tur-liste" class="chips"></div>
+      <div class="btnrow">
+        <button class="btn ghost" id="btn-tur-ekle">+ Kalem yaz</button>
+        <button class="btn ghost danger" id="btn-tur-temizle">Listeyi temizle</button>
+      </div>
+    </div>
+
+    <div id="daire-ayarlar" hidden>
+      <label class="field"><span>Bina adı</span><input id="set-bina" placeholder="Örn. Yeşil Apartmanı"></label>
+      <label class="field"><span>Aylık aidat (₺)</span><input id="set-aidat" type="number" inputmode="decimal" step="1" min="0"></label>
+      <label class="field"><span>Aidat günü (ayın kaçı)</span><input id="set-gun" type="number" inputmode="numeric" min="1" max="28"></label>
+      <label class="field"><span>Devreden kasa (₺)</span><input id="set-kasa" type="number" inputmode="decimal" step="1"></label>
+      <h2 class="sect">Dükkanlar</h2>
+      <p class="hint" id="dukkan-ayar-ozet">—</p>
+      <div class="btnrow"><button class="btn ghost" id="btn-dukkan-toplu2">Dükkanları topluca ekle</button></div>
+
+      <h2 class="sect">Aidattan muaf birimler</h2>
+      <p class="hint" id="muaf-ozet">—</p>
+      <div class="chips" id="muaf-liste"></div>
+      <button class="btn ghost" id="btn-muaf-sec" style="margin-top:10px">Muaf birimleri seç</button>
+      <button class="btn" id="btn-ayar-kaydet" style="margin-top:14px">Kaydet</button>
+
+      <h2 class="sect">Yedekleme</h2>
+      <p class="hint">Veriler yalnızca bu telefonda saklanır. Telefon değiştirirken yedek al, yeni telefonda geri yükle.</p>
+      <div class="btnrow">
+        <button class="btn ghost" id="btn-yedek">Yedek al</button>
+        <button class="btn ghost" id="btn-geri-yukle">Yedekten geri yükle</button>
+      </div>
+      <input type="file" id="dosya" accept="application/json,.json" hidden>
+      <div class="btnrow" style="margin-top:22px">
+        <button class="btn ghost" id="btn-ornek">Örnek veri yükle</button>
+        <button class="btn danger ghost" id="btn-sifirla">Tümünü sil</button>
+      </div>
+      <p class="hint" style="margin-top:18px">Sürüm 1.2 · çevrimdışı çalışır</p>
+
+      <h2 class="sect">Lisans &amp; Hakkında</h2>
+      <div class="licbox" id="lic-kisa"></div>
+      <button class="btn ghost" id="btn-lisans" style="margin-top:10px;width:100%">Lisans bilgilerini görüntüle</button>
+      <div class="btnrow" style="margin-top:6px">
+        <button class="btn ghost danger" id="btn-cikis3">Kaydet &amp; çık</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ALT MENÜ ============ -->
+  <nav class="tabs-bottom" id="nav">
+    <button class="on" data-v="ozet">
+      <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+      <span>Özet</span>
+    </button>
+    <button data-v="aidat">
+      <svg viewBox="0 0 24 24"><path d="M12 2 2 8v2h20V8L12 2zM4 12v6H2v2h20v-2h-2v-6h-2v6h-3v-6h-2v6H8v-6H6v6H4v-6z"/></svg>
+      <span>Aidat</span>
+    </button>
+    <button data-v="gider">
+      <svg viewBox="0 0 24 24"><path d="M3 3h18v4H3V3zm0 6h18v4H3V9zm0 6h18v4H3v-4zm4 1.5h4v1H7v-1z"/></svg>
+      <span>Gider</span>
+    </button>
+    <button data-v="borc">
+      <svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.6 3.8 10.7 9 12 5.2-1.3 9-6.4 9-12V5l-9-4zm1 17h-2v-2h2v2zm0-4h-2V7h2v7z"/></svg>
+      <span>Borç</span>
+    </button>
+    <button data-v="rapor">
+      <svg viewBox="0 0 24 24"><path d="M5 21h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2zM7 17V9h2v8H7zm4 0V5h2v12h-2zm4 0v-6h2v6h-2z"/></svg>
+      <span>Rapor</span>
+    </button>
+    <button data-v="daire">
+      <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4.4 0-8 2.2-8 5v3h16v-3c0-2.8-3.6-5-8-5z"/></svg>
+      <span>Daireler</span>
+    </button>
+  </nav>
+
+  <!-- ============ DİYALOG ============ -->
+  <div class="sheet-wrap" id="sheet-wrap" hidden>
+    <div class="sheet-bg" id="sheet-bg"></div>
+    <div class="sheet" id="sheet">
+      <div class="grab"></div>
+      <h3 id="sheet-title">Başlık</h3>
+      <div id="sheet-body"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
