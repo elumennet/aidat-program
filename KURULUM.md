@@ -4,6 +4,22 @@
 
 ---
 
+## ⭐ EN KOLAY YOL: Yayındaki adresi telefondan aç (bilgisayar gerekmez)
+
+Program internete yüklendi:
+
+**https://elumennet.github.io/aidat-program/**
+
+1. Telefonda bu adresi aç (Android: **Chrome**, iPhone: **Safari**).
+2. **Ana ekrana ekle:**
+   - Android/Chrome: sağ üst **⋮** → **"Uygulamayı yükle"** / **"Ana ekrana ekle"**
+   - iPhone/Safari: alttaki **Paylaş** → **"Ana Ekrana Ekle"** → Ekle
+3. Ekranda **Aidat** simgesi çıkar. Bir kez açtıktan sonra internet olmasa da çalışır (çevrimdışı).
+
+> Bu adres herkese açıktır ama **verileriniz yalnızca sizin telefonunuzda** durur; sunucuya hiçbir bilgi gitmez.
+
+---
+
 ## Kısa yol (en kolay): Dosyayı telefondan aç
 
 Bu yol için bilgisayar veya internet **gerekmez**; program telefonda çevrimdışı çalışır.
