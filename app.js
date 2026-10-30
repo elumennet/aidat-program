@@ -54,10 +54,10 @@ function profilAdGuncelle() {
   const p = PRO.binalar.find(b => b.id === PRO.aktif);
   if (p) { p.ad = DB.bina || p.ad; profiliKaydet(); }
 }
-function binaGec(id) {
+async function binaGec(id) {
   const b = PRO.binalar.find(x => x.id === id); if (!b) return;
   PRO.aktif = id; profiliKaydet();
-  DB = load(); kayitDurumCiz(); renderAll(); git('ozet');
+  DB = await yukle(); kayitDurumCiz(); renderAll(); git('ozet');
   toast(`Bina değiştirildi: ${b.ad || 'Bina'}`);
 }
 function yeniBinaEkle() {
@@ -71,13 +71,13 @@ function yeniBinaEkle() {
   renderAll(); git('ozet');
   toast(`Yeni bina eklendi: ${temiz}`);
 }
-function binaSil(id) {
+async function binaSil(id) {
   if (PRO.binalar.length <= 1) return toast('Silinecek başka bina yok');
   const b = PRO.binalar.find(x => x.id === id); if (!b) return;
   if (!confirm(`"${b.ad || 'Bina'}" ve tüm kayıtları (daireler, ödemeler, giderler) kalıcı silinsin mi? Bu işlem geri alınamaz!`)) return;
   PRO.binalar = PRO.binalar.filter(x => x.id !== id);
   try { localStorage.removeItem(profilKey(id)); } catch (e) {}
-  if (PRO.aktif === id) { PRO.aktif = PRO.binalar[0].id; DB = load(); }
+  if (PRO.aktif === id) { PRO.aktif = PRO.binalar[0].id; DB = await yukle(); }
   profiliKaydet();
   renderAll(); git('ozet'); toast('Bina ve kayıtları silindi');
 }
@@ -138,7 +138,29 @@ function ornekVeri() {
   };
 }
 
-let DB = load();
+let DB = BOS_VERI();
+
+/* ---- şifreleme (PIN) ---- */
+let oturumAnahtari = null;
+function baytb64(ui) { let s = ''; ui.forEach(b => s += String.fromCharCode(b)); return btoa(s); }
+function b64bayt(s) { const d = atob(s); const a = new Uint8Array(d.length); for (let i = 0; i < d.length; i++) a[i] = d.charCodeAt(i); return a; }
+async function pinHashHex(pin, tuzB64) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin + '|' + tuzB64));
+  return [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function anahtarUret(pin, tuzB64) {
+  const mat = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64bayt(tuzB64), iterations: 150000, hash: 'SHA-256' }, mat, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function sifrele(obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, oturumAnahtari, new TextEncoder().encode(JSON.stringify(obj)));
+  return JSON.stringify({ '@enc': 1, iv: baytb64(iv), veri: baytb64(new Uint8Array(ct)) });
+}
+async function sifreCoz(paket) {
+  const veri = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64bayt(paket.iv) }, oturumAnahtari, b64bayt(paket.veri));
+  return JSON.parse(new TextDecoder().decode(veri));
+}
 
 /* Yedek ve storage'dan gelen veriyi güvenli hale getirir */
 function normalize(d) {
@@ -157,20 +179,32 @@ function normalize(d) {
   return d;
 }
 
-function load() {
+async function yukle() {
   try {
     const ham = localStorage.getItem(profilKey(PRO.aktif)) || localStorage.getItem(VERI_ANAHTARI);
-    if (!ham) { const d = ornekVeri(); save(d); return d; }
-    return normalize(JSON.parse(ham));
+    if (!ham) { await kaliciKaydet(ornekVeri()); return DB; }
+    const nesne = JSON.parse(ham);
+    if (nesne && nesne['@enc']) return normalize(await sifreCoz(nesne));
+    return normalize(nesne);
   } catch (e) {
     return ornekVeri();
   }
 }
-function save(next) {
+async function kaliciKaydet(next) {
   if (next) DB = next;
-  try { localStorage.setItem(profilKey(PRO.aktif), JSON.stringify(DB)); }
+  let ham = JSON.stringify(DB);
+  try { ham = oturumAnahtari ? await sifrele(DB) : JSON.stringify(DB); } catch (e) {}
+  try { localStorage.setItem(profilKey(PRO.aktif), ham); }
   catch (e) { toast('Kayıt yapılamadı (depolama dolu olabilir)'); }
   kayitDamgasi = new Date();
+}
+const save = next => kaliciKaydet(next);
+async function profilYaz(id, veri) {
+  const ham = oturumAnahtari ? await sifrele(veri) : JSON.stringify(veri);
+  try { localStorage.setItem(profilKey(id), ham); } catch (e) {}
+}
+async function profilYazDuz(id, veri) {
+  try { localStorage.setItem(profilKey(id), JSON.stringify(veri)); } catch (e) {}
 }
 
 /* kayıt zamanı göstergesi */
@@ -726,6 +760,94 @@ function renderRapor() {
   }
 }
 
+/* ---------------- grafik sekmesi (dairesel değil; SVG) ---------------- */
+function cizgiSvg(seriler, renkler) {
+  const W = 320, H = 150, PADX = 34, PADT = 10, PADB = 20;
+  const n = seriler[0].veri.length;
+  const max = Math.max(1, ...seriler.flatMap(s => s.veri));
+  const x = i => PADX + (n === 1 ? 0 : i * (W - PADX - 6) / (n - 1));
+  const y = v => PADT + (H - PADT - PADB) * (1 - v / max);
+  const cizgi = dizi => dizi.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const grid = [0, 0.5, 1].map(k => {
+    return `<line x1="${PADX}" y1="${y(max * k)}" x2="${W - 4}" y2="${y(max * k)}" stroke="var(--line)" stroke-dasharray="3 3"/>` +
+      `<text x="${PADX - 5}" y="${y(max * k) + 3}" fill="#8fa0ad" font-size="8" text-anchor="end">${k ? fmt(max * k) : ''}</text>`;
+  });
+  const etiketler = [0, n >> 1, n - 1].map(i =>
+    `<text x="${x(i)}" y="${H - 5}" fill="#8fa0ad" font-size="8" text-anchor="middle">${ayAdi(seriler[0].etiketler[i]).slice(0, 3)}</text>`).join('');
+  const yollar = seriler.map((s, k) =>
+    `<path d="${cizgi(s.veri)}" fill="none" stroke="${renkler[k]}" stroke-width="2" stroke-linejoin="round">` +
+    (s.veri[n - 1] ? `<title>${esc(s.ad)}: son ${fmt(s.veri[n - 1])}</title>` : '') + '</path>');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img">${grid}${etiketler}${yollar}</svg>`;
+}
+
+function renderGrafik() {
+  /* 12 aylık tahsilat/gider trendi */
+  const aylar = raporAylari();
+  const etiketler = aylar.map(x => x.ay);
+  const trend = cizgiSvg([
+    { ad: 'Tahsilat', veri: aylar.map(x => x.gelir), etiketler },
+    { ad: 'Gider', veri: aylar.map(x => x.gider), etiketler }
+  ], ['#35b06f', '#d1495b']);
+  const gelen12 = aylar.reduce((s, x) => s + x.gelir, 0);
+  const giden12 = aylar.reduce((s, x) => s + x.gider, 0);
+
+  /* çoklu bina karşılaştırması */
+  const satirBina = async id => {
+    const b = PRO.binalar.find(x => x.id === id); if (!b) return null;
+    let veri = b.id === PRO.aktif ? DB : null;
+    if (!veri) {
+      const ham = localStorage.getItem(profilKey(b.id));
+      const n = JSON.parse(ham || 'null');
+      if (n && n['@enc'] && !oturumAnahtari) return null;
+      veri = normalize((n && n['@enc']) ? await sifreCoz(n) : n);
+    }
+    return veri;
+  };
+  const son12 = aylar.map(x => x.ay);
+  const binaSatirlar = (() => {
+    const satirlar = [];
+    const proms = PRO.binalar.map(async b => {
+      const v = await satirBina(b.id);
+      if (!v) { satirlar.push({ b, gelir: null, gider: null, kilitli: true }); return; }
+      const gelir = v.odemeler.filter(o => son12.includes(o.ay)).reduce((s, o) => s + Number(o.tutar || 0), 0);
+      const gider = v.giderler.filter(g => son12.includes(g.ay)).reduce((s, g) => s + Number(g.tutar || 0), 0);
+      satirlar.push({ b, gelir, gider, kilitli: false, net: gelir - gider });
+    });
+    return Promise.all(proms).then(() => satirlar);
+  })();
+  const kayit = DB.giderler.filter(g => aylar.some(x => x.ay === g.ay)).length;
+  const set = (id, txt) => { const nd = $(id); if (nd) nd.textContent = txt; };
+  set('#g-x12-gelir', fmt(gelen12));
+  set('#g-x12-gelir-sub', 'aidat + ek tahsilat');
+  set('#g-x12-gider', fmt(giden12));
+  set('#g-x12-gider-sub', `${kayit} kayıt`);
+  set('#grafik-donem', `${ayAdi(aylar[0].ay)} – ${ayAdi(aylar[aylar.length - 1].ay)}`);
+  const trendEl = $('#grafik-trend');
+  if (trendEl) trendEl.innerHTML = trend;
+
+  /* çoklu bina karşılaştırması */
+  const binaEl = $('#grafik-binalar');
+  if (!binaEl) return;
+  binaSatirlar.then(satirlar => {
+    satirlar.sort((a, b) => (b.gelir || 0) - (a.gelir || 0));
+    binaEl.innerHTML = satirlar.length <= 1
+      ? `<p class="hint">Karşılaştırma için ikinci bir bina ekleyin: Daireler → Ayarlar → “Çoklu bina”.</p>`
+      : `<div class="rtab">
+          <div class="rrow head" style="grid-template-columns:1.2fr 1fr 1fr 1fr"><span>Bina</span><span class="num">12ay gelir</span><span class="num">gider</span><span class="num">net</span></div>
+          ${satirlar.map(s => s.kilitli ? `
+          <div class="rrow" style="grid-template-columns:1.2fr 1fr 1fr 1fr"><span class="r-ay">${esc(s.b.ad || 'Bina')} <span class="tag">PIN</span></span><span class="num" style="color:#8fa0ad" colspan="3">gizli</span></div>` : `
+          <div class="rrow" style="grid-template-columns:1.2fr 1fr 1fr 1fr" data-binagec="${s.b.id}">
+            <span class="r-ay">${esc(s.b.ad || 'Bina')}${s.b.id === PRO.aktif ? ' <span class="tag">Aktif</span>' : ''}</span>
+            <span class="num in">${fmt(s.gelir)}</span><span class="num out">${fmt(s.gider)}</span>
+            <span class="num net">${fmt(s.net || 0)}</span></div>`).join('')}
+        </div>
+        <p class="hint">Satıra dokunursan o bina aktif olur (PIN korumalı binalar şifresi açılmadan gizli kalır).</p>`;
+    binaEl.querySelectorAll('[data-binagec]').forEach(row => {
+      row.addEventListener('click', () => binaGec(row.dataset.binagec));
+    });
+  });
+}
+
 function raporMetni() {
   const aylar = raporAylari();
   const satir = aylar.map(x => `${MONTHS[Number(x.ay.split('-')[1]) - 1]} ${x.ay.slice(0, 4)}: gelir ${fmt(x.gelir)} | gider ${fmt(x.gider)} | net ${fmt(x.net)}`);
@@ -974,12 +1096,14 @@ function renderAll() {
   if (state.view === 'borc') renderBorc();
   if (state.view === 'rapor') renderRapor();
   if (state.view === 'daire') renderDaire();
+  if (state.view === 'grafik') renderGrafik();
+  guvenlikDurumCiz();
 }
 
 /* ---------------- gezinme ---------------- */
 function git(v) {
   state.view = v;
-  ['ozet', 'aidat', 'gider', 'borc', 'rapor', 'daire'].forEach(k => { $('#v-' + k).hidden = k !== v; });
+  ['ozet', 'aidat', 'gider', 'borc', 'rapor', 'grafik', 'daire'].forEach(k => { $('#v-' + k).hidden = k !== v; });
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   window.scrollTo({ top: 0 });
   renderAll();
@@ -1635,30 +1759,26 @@ $('#bina-liste').addEventListener('click', e => {
   if (c) binaGec(c.dataset.binagec);
 });
 
-/* yedek: tüm binaları tek dosyada paketle */
-$('#btn-yedek').onclick = () => {
-  const paket = {
-    coklu: true, aktif: PRO.aktif,
-    binalar: [...PRO.binalar].map(b => {
-      let veri = null;
-      try { veri = JSON.parse(localStorage.getItem(profilKey(b.id))); } catch (e) { veri = null; }
-      if (!veri && b.id === PRO.aktif) veri = DB;
-      return { id: b.id, ad: b.ad || (veri?.bina) || 'Bina', veri };
-    })
-  };
-  const blob = new Blob([JSON.stringify(paket, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `aidat-yedek-${today()}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-  toast('Yedek indirildi (tüm binalar dahil)');
+/* yedek: tüm binaları tek dosyada paketle (elediğimiz elle + bulut otomatik yedek aynı paket) */
+async function yedekPaketi() {
+  const paket = { coklu: true, aktif: PRO.aktif, binalar: [] };
+  for (const b of PRO.binalar) {
+    let veri = null;
+    if (b.id === PRO.aktif) veri = DB;
+    else { try { const n = JSON.parse(localStorage.getItem(profilKey(b.id))); veri = (n && n['@enc']) ? await sifreCoz(n) : n; } catch (e2) { veri = null; } }
+    paket.binalar.push({ id: b.id, ad: b.ad || (veri && veri.bina) || 'Bina', veri });
+  }
+  return paket;
+}
+$('#btn-yedek').onclick = async () => {
+  const r = await yedegiCibasele(await yedekPaketi());
+  toast(r.ok ? `Yedek alındı: ${r.nereye}` : 'Yedek alınamadı');
 };
 $('#btn-geri-yukle').onclick = () => $('#dosya').click();
-$('#dosya').onchange = e => {
+$('#dosya').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
     try {
       const d = JSON.parse(r.result);
       if (d && d.coklu && Array.isArray(d.binalar) && d.binalar.length) {
@@ -1669,16 +1789,14 @@ $('#dosya').onchange = e => {
         };
         if (!PRO.binalar.some(b => b.id === PRO.aktif)) PRO.aktif = PRO.binalar[0].id;
         profiliKaydet();
-        d.binalar.forEach(b => {
-          if (b.veri && Array.isArray(b.veri.daireler)) {
-            try { localStorage.setItem(profilKey(b.id || uid()), JSON.stringify(b.veri)); } catch (e) {}
-          }
-        });
-        DB = load(); profilAdGuncelle();
+        for (const b of d.binalar) {
+          if (b.veri && Array.isArray(b.veri.daireler)) await profilYaz(b.id, normalize(b.veri));
+        }
+        DB = await yukle(); profilAdGuncelle();
         renderAll(); toast(`Yedek geri yüklendi — ${PRO.binalar.length} bina`);
       } else if (Array.isArray(d.daireler)) {
         /* eski tek-bina yedeği: aktif binaya uygula */
-        save(normalize(d)); profiliAdGuncelle();
+        await kaliciKaydet(normalize(d)); profilAdGuncelle();
         renderAll(); toast('Yedek geri yüklendi');
       } else throw new Error('geçersiz');
     } catch (err) { toast('Dosya okunamadı'); }
@@ -1696,12 +1814,199 @@ $('#btn-sifirla').onclick = () => {
   renderAll(); toast('Tüm veriler ve gider kalemleri silindi');
 };
 
-/* ---------------- başlat ---------------- */
-kayitDurumCiz();
-lisansKisa();
-renderAll();
-git('ozet');
+/* ---------------- güvenlik (PIN + şifreleme) ---------------- */
+$('#btn-pin-kur').onclick = async () => {
+  const p1 = prompt('Yeni PIN (4-6 haneli):', '');
+  if (p1 === null) return;
+  if (!/^\d{4,6}$/.test(p1)) return toast('PIN 4-6 hane olmalı');
+  const p2 = prompt('PIN\'i tekrar girin:', '');
+  if (p2 === null) return;
+  if (p2 !== p1) return toast('PINler eşleşmedi');
+  const tuz = baytb64(crypto.getRandomValues(new Uint8Array(16)));
+  PRO.guvenlik = { pinHash: await pinHashHex(p1, tuz), tuz };
+  oturumAnahtari = await anahtarUret(p1, tuz);
+  profiliKaydet();
+  for (const b of PRO.binalar) {
+    let ham = localStorage.getItem(profilKey(b.id));
+    if (b.id === PRO.aktif && !ham) ham = JSON.stringify(DB);
+    if (!ham) continue;
+    try { const n = JSON.parse(ham); await profilYaz(b.id, (n && n['@enc']) ? await sifreCoz(n) : n); } catch (e) {}
+  }
+  toast('PIN kuruldu — veriler artık şifreli saklanıyor');
+  guvenlikDurumCiz(); renderDaire();
+};
+$('#btn-pin-kaldir').onclick = async () => {
+  if (!(PRO.guvenlik && oturumAnahtari)) return toast('PIN zaten kurulu değil');
+  const p = prompt('Mevcut PIN:', '');
+  if (p === null) return;
+  const h = await pinHashHex(p, PRO.guvenlik.tuz);
+  if (h !== PRO.guvenlik.pinHash) return toast('PIN yanlış');
+  for (const b of PRO.binalar) {
+    const ham = localStorage.getItem(profilKey(b.id));
+    if (ham) { try { await profilYazDuz(b.id, await sifreCoz(JSON.parse(ham))); } catch (e) { /* şifresiz veri olabilir, silinmez */ } }
+  }
+  PRO.guvenlik = null; oturumAnahtari = null; profiliKaydet();
+  toast('PIN kaldırıldı — veriler şifresiz saklanıyor');
+  guvenlikDurumCiz(); renderDaire();
+};
 
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+function guvenlikDurumCiz() {
+  const pk = $('#pin-durum');
+  if (pk) pk.textContent = PRO.guvenlik
+    ? '🔒 PIN aktif — veriler AES-256 ile şifreli saklanıyor.'
+    : '🔓 PIN kurulmamış — veriler şifresiz saklanıyor.';
+  const bs = $('#bulut-siklik');
+  if (bs) bs.value = bulutAyar().mod;
+  const bd = $('#bulut-durum');
+  if (bd) {
+    const a = bulutAyar();
+    const son = a.son ? `${fmtTarih(a.son.slice(0, 10))} ${a.son.slice(11, 16)}` : 'hiç';
+    bd.textContent = `Son yedek: ${son} · ${klasorAdi ? ('hedef klasör: ' + klasorAdi) : 'hedef klasör seçilmemiş'}`;
+  }
 }
+
+/* ---------------- otomatik bulut yedeği ---------------- */
+const BULUT_AYAR_KEY = 'aidat-bulut-v1';
+let klasorTutamac = null, klasorAdi = '';
+function bulutAyar() {
+  let a = null;
+  try { a = JSON.parse(localStorage.getItem(BULUT_AYAR_KEY)); } catch (e) { a = null; }
+  if (!a || typeof a !== 'object') a = { mod: 'haftalik', son: null };
+  if (!['kapali', 'gunluk', 'haftalik'].includes(a.mod)) a.mod = 'haftalik';
+  return a;
+}
+function bulutAyarKaydet(a) { try { localStorage.setItem(BULUT_AYAR_KEY, JSON.stringify(a)); } catch (e) {} }
+
+async function idbIslem(mod, fn) {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open('AidatYedek', 1);
+    rq.onupgradeneeded = () => { if (!rq.result.objectStoreNames.contains('s')) rq.result.createObjectStore('s'); };
+    rq.onsuccess = () => {
+      const db = rq.result;
+      try { const tx = db.transaction('s', mod); const cikis = fn(tx.objectStore('s')); tx.oncomplete = () => { db.close(); res(cikis && cikis.result !== undefined ? cikis.result : cikis); }; tx.onerror = () => { db.close(); rej(tx.error); }; }
+      catch (e) { db.close(); rej(e); }
+    };
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function tutamacGetir() {
+  if (klasorTutamac) return klasorTutamac;
+  try {
+    const h = await idbIslem('readonly', s => s.get('klasor'));
+    if (h) { klasorTutamac = h; klasorAdi = h.name; await h.requestPermission({ mode: 'readwrite' }).catch(() => {}); }
+  } catch (e) {}
+  return klasorTutamac;
+}
+async function tutamacKaydet(h) {
+  klasorTutamac = h; klasorAdi = h.name;
+  await idbIslem('readwrite', s => s.put(h, 'klasor'));
+}
+
+async function yedegiCibasele(paket) {
+  const icerik = JSON.stringify(paket, null, 2);
+  const ad = `aidat-yedek-${today()}.json`;
+  if (klasorTutamac) {
+    try {
+      const f = await klasorTutamac.getFileHandle(ad, { create: true });
+      const w = await f.createWritable();
+      await w.write(new Blob([icerik]));
+      await w.close();
+      return { ok: true, nereye: `${klasorAdi}/${ad}` };
+    } catch (e) { /* klasör silindi → indirmeye düş */ }
+  }
+  try {
+    const blob = new Blob([icerik], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = ad;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    return { ok: true, nereye: 'tarayıcı indirme klasörü' };
+  } catch (e) { return { ok: false }; }
+}
+
+async function bulutKaydiDoldur() {
+  const a = bulutAyar();
+  a.son = new Date().toISOString();
+  bulutAyarKaydet(a);
+}
+
+async function otomatikYedekKontrol() {
+  const a = bulutAyar();
+  if (a.mod === 'kapali') return;
+  const sonZaman = a.son ? new Date(a.son).getTime() : 0;
+  const SINIR = a.mod === 'gunluk' ? 24 * 3600e3 : 7 * 24 * 3600e3;
+  if (sonZaman && (Date.now() - sonZaman) < SINIR) return;
+  await tutamacGetir();
+  const r = await yedegiCibasele(await yedekPaketi());
+  if (r.ok) { await bulutKaydiDoldur(); toast(`Otomatik bulut yedeği: ${r.nereye}`); }
+  guvenlikDurumCiz();
+}
+
+$('#btn-bulut-klasor').onclick = async () => {
+  if (!window.showDirectoryPicker) return toast('Bu tarayıcı klasör seçmeyi desteklemiyor; yedekler açılışta otomatik indirilir');
+  try {
+    const h = await window.showDirectoryPicker({ id: 'aidat-yedek', mode: 'readwrite', startIn: 'documents' });
+    await tutamacKaydet(h);
+    const a = bulutAyar();
+    if (a.mod === 'kapali') { a.mod = 'haftalik'; bulutAyarKaydet(a); }
+    toast(`Hedef klasör: ${h.name}`);
+    guvenlikDurumCiz(); renderDaire();
+  } catch (e) { /* iptal edildi */ }
+};
+$('#btn-bulut-simdi').onclick = async () => {
+  await tutamacGetir();
+  const r = await yedegiCibasele(await yedekPaketi());
+  if (r.ok) { await bulutKaydiDoldur(); toast(`Yedek alındı: ${r.nereye}`); }
+  else toast('Yedek alınamadı');
+  guvenlikDurumCiz();
+};
+$('#bulut-siklik').onchange = e => {
+  const a = bulutAyar(); a.mod = e.target.value; bulutAyarKaydet(a);
+  toast('Otomatik yedek: ' + e.target.value);
+};
+
+/* ---------------- kilit ekranı ---------------- */
+function kilitEkran(pinHash, tuz) {
+  $('#kilit').hidden = false;
+  return new Promise(resolve => {
+    let girilen = '';
+    const mesaj = $('#kilit-mesaj'), dots = $('#kilit-dots');
+    const ciz = () => { dots.textContent = girilen ? '●'.repeat(girilen.length) : '····'; };
+    ciz();
+    $('#kilit-tuslar').querySelectorAll('button').forEach(b => {
+      b.onclick = () => {
+        const v = b.dataset.tus;
+        if (v === 'sil') { girilen = girilen.slice(0, -1); ciz(); mesaj.textContent = ''; return; }
+        if (v === 'ok') {
+          if (girilen.length < 4) { mesaj.textContent = 'En az 4 hane girin.'; return; }
+          pinHashHex(girilen, tuz).then(h => {
+            if (h === pinHash) { $('#kilit').hidden = true; resolve(girilen); }
+            else { mesaj.textContent = 'PIN yanlış, tekrar deneyin.'; girilen = ''; ciz(); }
+          });
+          return;
+        }
+        if (girilen.length < 8) { girilen += v; ciz(); mesaj.textContent = ''; }
+      };
+    });
+  });
+}
+
+/* ---------------- başlat ---------------- */
+(async function baslat() {
+  PRO = proYukle();
+  if (PRO.guvenlik && PRO.guvenlik.pinHash) {
+    try { oturumAnahtari = await anahtarUret(await kilitEkran(PRO.guvenlik.pinHash, PRO.guvenlik.tuz), PRO.guvenlik.tuz); }
+    catch (e) { PRO.guvenlik = null; profiliKaydet(); }
+  }
+  DB = await yukle();
+  kayitDurumCiz();
+  lisansKisa();
+  renderAll();
+  git('ozet');
+  otomatikYedekKontrol();
+
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  }
+})();

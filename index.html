@@ -15,7 +15,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Aidat">
-<link rel="stylesheet" href="style.css?v=14">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 <div id="app">
@@ -244,6 +244,40 @@
     </div>
   </section>
 
+  <!-- ============ GRAFİK / İSTATİSTİK ============ -->
+  <section class="view" id="v-grafik" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">İstatistik</div>
+        <h1>Grafik</h1>
+      </div>
+      <div class="monthnav">
+        <span id="grafik-donem" class="using">—</span>
+      </div>
+    </header>
+
+    <div class="cards">
+      <div class="card green">
+        <div class="clabel">12 ay tahsilat</div>
+        <div class="cval" id="g-x12-gelir">0 ₺</div>
+        <div class="csub" id="g-x12-gelir-sub">aidat</div>
+      </div>
+      <div class="card red">
+        <div class="clabel">12 ay gider</div>
+        <div class="cval" id="g-x12-gider">0 ₺</div>
+        <div class="csub" id="g-x12-gider-sub">0 kayıt</div>
+      </div>
+    </div>
+
+    <h2 class="sect">Son 12 ay tahsilat / gider trendi</h2>
+    <div class="panel" id="grafik-trend" style="padding:10px"></div>
+    <p class="hint" style="margin:4px 6px 0"><span style="color:#1b7a43">■</span> Tahsilat &nbsp; <span style="color:#c0392b">■</span> Gider</p>
+
+    <h2 class="sect" style="margin-top:18px">Bina karşılaştırması</h2>
+    <div class="panel" id="grafik-binalar" style="padding:10px"></div>
+    <div id="grafik-bina-liste" style="margin-top:10px"></div>
+  </section>
+
   <!-- ============ DAİRELER ============ -->
   <section class="view" id="v-daire" hidden>
     <header class="top">
@@ -316,11 +350,34 @@
         <button class="btn ghost" id="btn-geri-yukle">Yedekten geri yükle</button>
       </div>
       <input type="file" id="dosya" accept="application/json,.json" hidden>
+      
+<h2 class="sect">Güvenlik (PIN + şifreleme)</h2>
+<p class="hint">PIN kurulunca veriler tarayıcıda AES-256 ile şifrelenmiş olarak saklanır ve program her açılışta PIN sorar. <b>Not:</b> PIN unutulursa veriler geri getirilemez — PIN'i bir yere mutlaka yazın.</p>
+<div class="btnrow" style="margin-top:8px">
+  <button class="btn ghost" id="btn-pin-kur">PIN kur / değiştir</button>
+  <button class="btn ghost danger" id="btn-pin-kaldir">PIN kaldır</button>
+</div>
+<p class="hint" id="pin-durum">—</p>
+
+<h2 class="sect">Bulut yedeği (otomatik)</h2>
+<p class="hint">“Hedef klasör seç” ile masaüstü Chrome'dan Google Drive/Dropbox senkron klasörünüzü bir kez seçin. Program her açılışta son yedeğe bakıp gerekirse yeni paketi bu klasöre yazar; klasör öteleği kendiliğinden cloud'a (Drive/Dropbox) aktarır. Tarayıcı klasör seçmeyi desteklemiyorsa yedek açılışta otomatik İndirilenler klasörüne iner.</p>
+<div class="btnrow" style="margin-top:8px">
+  <button class="btn ghost" id="btn-bulut-klasor">Hedef klasör seç</button>
+  <button class="btn ghost" id="btn-bulut-simdi">Şimdi yedekle</button>
+</div>
+<label class="field mt10"><span>Otomatik yedek sıklığı</span>
+  <select id="bulut-siklik">
+    <option value="kapali">Kapalı</option>
+    <option value="gunluk">Her açılışta en az 1 gün geçmişse</option>
+    <option value="haftalik">Her açılışta en az 7 gün geçmişse</option>
+  </select>
+</label>
+<p class="hint" id="bulut-durum">—</p>
       <div class="btnrow" style="margin-top:22px">
         <button class="btn ghost" id="btn-ornek">Örnek veri yükle</button>
         <button class="btn danger ghost" id="btn-sifirla">Tümünü sil</button>
       </div>
-      <p class="hint" style="margin-top:18px">Sürüm 1.4 · çevrimdışı çalışır</p>
+      <p class="hint" style="margin-top:18px">Sürüm 1.5 · çevrimdışı çalışır</p>
 
       <h2 class="sect">Lisans &amp; Hakkında</h2>
       <div class="licbox" id="lic-kisa"></div>
@@ -353,6 +410,10 @@
       <svg viewBox="0 0 24 24"><path d="M5 21h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2zM7 17V9h2v8H7zm4 0V5h2v12h-2zm4 0v-6h2v6h-2z"/></svg>
       <span>Rapor</span>
     </button>
+    <button data-v="grafik">
+      <svg viewBox="0 0 24 24"><path d="M3 3h18v4H3V3zm2 6h4v12H5V9zm6 0h4v9h-4V9zm6 0h4v14h-4V9z"/></svg>
+      <span>Grafik</span>
+    </button>
     <button data-v="daire">
       <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4.4 0-8 2.2-8 5v3h16v-3c0-2.8-3.6-5-8-5z"/></svg>
       <span>Daireler</span>
@@ -369,8 +430,24 @@
     </div>
   </div>
 
+  <div class="kilit-overlay" id="kilit" hidden role="dialog" aria-label="PIN girişi">
+    <div class="kilit-box">
+      <div class="kilit-ikon">🔒</div>
+      <p class="kilit-baslik">Aidat Programı</p>
+      <p class="hint">Programı açmak için PIN girin</p>
+      <div class="kilit-dots" id="kilit-dots">····</div>
+      <p class="hint" id="kilit-mesaj" style="color:#d1495b;min-height:15px"></p>
+      <div class="kilit-tuslar" id="kilit-tuslar">
+        <button data-tus="1">1</button><button data-tus="2">2</button><button data-tus="3">3</button>
+        <button data-tus="4">4</button><button data-tus="5">5</button><button data-tus="6">6</button>
+        <button data-tus="7">7</button><button data-tus="8">8</button><button data-tus="9">9</button>
+        <button data-tus="sil" class="kilit-ust">⌫</button><button data-tus="0">0</button><button data-tus="ok" class="kilit-ust tamam">✓</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 </div>
-<script src="app.js?v=18"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

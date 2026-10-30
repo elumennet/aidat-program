@@ -1,7 +1,7 @@
-const CACHE = 'aidat-v10';
+const CACHE = 'aidat-v12';
 const ASSETS = [
   './',
-  './index.html', './app.js?v=18', './style.css?v=14',
+  './index.html', './app.js?v=21', './style.css?v=16',
   './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];
 self.addEventListener('install', e => {
