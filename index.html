@@ -15,7 +15,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Aidat">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 <div id="app">
@@ -24,7 +24,7 @@
   <section class="view" id="v-ozet">
     <header class="top">
       <div>
-        <div class="eyebrow" id="ozet-bina">Bina</div>
+        <div class="eyebrow" id="ozet-bina" title="Bina seç / değiştir (dokun)">Bina</div>
         <h1>Özet</h1>
       </div>
       <div class="monthnav">
@@ -44,6 +44,15 @@
         <div class="t2" id="kayit-zaman">Değişiklikler otomatik kaydedilir</div>
       </div>
       <button class="mini" id="btn-kaydet-cik">Kaydet &amp; çık</button>
+    </div>
+
+    <div class="card red" id="gecikme-uyari" style="display:none;align-items:center;justify-content:space-between;gap:10px">
+      <span class="dot no" style="flex:none"></span>
+      <div class="main">
+        <div class="t1">Geciken aidat — <b id="gecikme-tutar">0 ₺</b></div>
+        <div class="t2" id="gecikme-sub">—</div>
+      </div>
+      <button class="mini" id="btn-hatirlat">Hatırlat</button>
     </div>
 
     <div class="cards">
@@ -118,7 +127,10 @@
         <div class="clabel" id="aidat-baslik">Bu ayın aidatı</div>
         <div class="cval sm" id="aidat-tutar">0 ₺</div>
       </div>
-      <button class="btn" id="btn-toplu">Tümünü tahsil et</button>
+      <div class="btnrow" style="margin:0">
+        <button class="btn ghost" id="btn-pusula" style="padding:10px 12px">Pusula (PDF)</button>
+        <button class="btn" id="btn-toplu">Tümünü tahsil et</button>
+      </div>
     </div>
 
     <div id="aidat-liste" class="list"></div>
@@ -224,6 +236,11 @@
 
     <div class="btnrow" style="margin-top:16px">
       <button class="btn ghost" id="btn-rapor-kopyala">Raporu metin olarak paylaş</button>
+      <button class="btn ghost" id="btn-rapor-pdf">Yönetim raporu (PDF)</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn ghost" id="btn-csv-odeme">Ödemeler CSV</button>
+      <button class="btn ghost" id="btn-csv-gider">Giderler CSV</button>
     </div>
   </section>
 
@@ -268,6 +285,20 @@
       <label class="field"><span>Aylık aidat (₺)</span><input id="set-aidat" type="number" inputmode="decimal" step="1" min="0"></label>
       <label class="field"><span>Aidat günü (ayın kaçı)</span><input id="set-gun" type="number" inputmode="numeric" min="1" max="28"></label>
       <label class="field"><span>Devreden kasa (₺)</span><input id="set-kasa" type="number" inputmode="decimal" step="1"></label>
+
+      <h2 class="sect">Yıllık aidat geçmişi</h2>
+      <p class="hint">Aidat tutarı değişince yeni yıl ekleyin; geçmiş aylar o tarihteki tutarla hesaplanır. Yıl eklemezseniz tüm aylar için yukarıdaki güncel aidat kullanılır.</p>
+      <div id="aidat-yil-liste" class="chips"></div>
+      <div class="btnrow" style="margin-top:8px"><button class="btn ghost" id="btn-yil-ekle">+ Yıl ekle</button></div>
+
+      <h2 class="sect">Çoklu bina</h2>
+      <p class="hint">Birden fazla apartmanı aynı programda yönetin: aktif bina tüm ekranlarda geçerli, verileri birbirinden ayrıdır.</p>
+      <div id="bina-liste" class="chips"></div>
+      <div class="btnrow" style="margin-top:8px"><button class="btn ghost" id="btn-bina-yeni">+ Yeni bina ekle</button></div>
+
+      <h2 class="sect">Manuel borçlar (aktif bina)</h2>
+      <div id="ek-borc-liste" class="list" style="margin-top:8px"></div>
+
       <h2 class="sect">Dükkanlar</h2>
       <p class="hint" id="dukkan-ayar-ozet">—</p>
       <div class="btnrow"><button class="btn ghost" id="btn-dukkan-toplu2">Dükkanları topluca ekle</button></div>
@@ -289,7 +320,7 @@
         <button class="btn ghost" id="btn-ornek">Örnek veri yükle</button>
         <button class="btn danger ghost" id="btn-sifirla">Tümünü sil</button>
       </div>
-      <p class="hint" style="margin-top:18px">Sürüm 1.2 · çevrimdışı çalışır</p>
+      <p class="hint" style="margin-top:18px">Sürüm 1.4 · çevrimdışı çalışır</p>
 
       <h2 class="sect">Lisans &amp; Hakkında</h2>
       <div class="licbox" id="lic-kisa"></div>
@@ -340,6 +371,6 @@
 
   <div class="toast" id="toast"></div>
 </div>
-<script src="app.js"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

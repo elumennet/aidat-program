@@ -1,6 +1,7 @@
-const CACHE = 'aidat-v5';
+const CACHE = 'aidat-v10';
 const ASSETS = [
-  './', './index.html', './style.css', './app.js',
+  './',
+  './index.html', './app.js?v=18', './style.css?v=14',
   './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];
 self.addEventListener('install', e => {
@@ -15,8 +16,21 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || !req.url.startsWith(self.location.origin)) return;
+  // Sayfa geçişleri (gezinme) önce ağdan denenir; çevrimdışılıkta önbelleğe düşer.
+  // Böylece güncellemeler kullanıcılara ulaşır.
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+  // Statik dosyalar: hız için önbellekten
   e.respondWith(
-    caches.match(req).then(hit => {
+    caches.match(req, { ignoreSearch: false }).then(hit => {
       if (hit) return hit;
       return fetch(req).then(res => {
         const copy = res.clone();

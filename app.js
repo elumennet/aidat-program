@@ -1,1181 +1,376 @@
-/* =====================================================
-   Aidat — Bina Gelir Gider  (tek dosya, çevrimdışı)
-   Veriler localStorage'da tutulur.
-   ===================================================== */
-'use strict';
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f2a43">
+<title>Aidat — Bina Gelir Gider</title>
+<meta name="author" content="Cemal Solmaz">
+<meta name="copyright" content="© 2026 Cemal Solmaz — Tüm hakları saklıdır.">
+<meta name="description" content="Bina aidat, gelir-gider takip programı. © 2026 Cemal Solmaz.">
+<script>if(location.protocol==='http:'||location.protocol==='https:'){document.write('<link rel="manifest" href="manifest.webmanifest">');}</script>
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Aidat">
+<link rel="stylesheet" href="style.css?v=14">
+</head>
+<body>
+<div id="app">
 
-const KEY = 'aidat-app-v1';
-const MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
-
-/* ---------------- yardımcılar ---------------- */
-const $ = s => document.querySelector(s);
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-const ym = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-const today = () => new Date().toISOString().slice(0, 10);
-const ayAdi = key => { const [y, m] = key.split('-').map(Number); return `${MONTHS[m - 1]} ${y}`; };
-const ayKisa = key => { const [y, m] = key.split('-').map(Number); return `${MONTHS[m - 1].slice(0, 3)} ${y}`; };
-function ayKaydir(key, n) {
-  const [y, m] = key.split('-').map(Number);
-  const d = new Date(y, m - 1 + n, 1);
-  return ym(d);
-}
-const fmt = n => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(Math.round(n || 0)) + ' ₺';
-function fmtTarih(iso) {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-');
-  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
-}
-
-/* ---------------- veri ---------------- */
-const BOS_VERI = () => ({
-  bina: '', aidat: 0, aidatGun: 5, devredenKasa: 0, turlar: [], daireler: [], odemeler: [], giderler: []
-});
-
-function ornekVeri() {
-  const bu = ym();
-  return {
-    bina: 'Yeşil Apartmanı',
-    aidat: 750,
-    aidatGun: 5,
-    devredenKasa: 12500,
-    turlar: [],
-    daireler: [
-      { id: 'd1', no: '1', ad: 'Ahmet Yılmaz (Yönetici)', tel: '', muaf: true },
-      { id: 'd2', no: '2', ad: 'Ayşe Demir', tel: '' },
-      { id: 'd3', no: '3', ad: 'Mehmet Kaya', tel: '' },
-      { id: 'd4', no: '4', ad: 'Fatma Şahin', tel: '' },
-      { id: 'd5', no: '5', ad: 'Ali Çelik', tel: '' },
-      { id: 'd6', no: '6', ad: 'Zeynep Arslan', tel: '' },
-      { id: 's1', tip: 'dukkan', no: '1', ad: 'Market (zemin)', tel: '', aidat: 1500 },
-      { id: 's2', tip: 'dukkan', no: '2', ad: 'Eczane', tel: '', aidat: 1200 }
-    ],
-    odemeler: [
-      { id: uid(), daireId: 'd2', ay: bu, tutar: 750, tarih: today() },
-      { id: uid(), daireId: 'd4', ay: bu, tutar: 750, tarih: today() },
-      { id: uid(), daireId: 'd3', ay: ayKaydir(bu, -1), tutar: 750, tarih: ayKaydir(bu, -1) + '-09' },
-      { id: uid(), daireId: 's1', ay: bu, tutar: 1500, tarih: today() }
-    ],
-    giderler: [
-      { id: uid(), ay: bu, tur: 'Temizlik', aciklama: 'Ortak alan temizliği', tutar: 1200, tarih: bu + '-03' },
-      { id: uid(), ay: bu, tur: 'Elektrik', aciklama: 'Ortak elektrik faturası', tutar: 860, tarih: bu + '-10' },
-      { id: uid(), ay: bu, tur: 'Asansör', aciklama: 'Aylık bakım', tutar: 900, tarih: bu + '-12' },
-      { id: uid(), ay: ayKaydir(bu, -1), tur: 'Su', aciklama: 'Ortak su', tutar: 540, tarih: ayKaydir(bu, -1) + '-14' }
-    ]
-  };
-}
-
-let DB = load();
-
-function load() {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) { const d = ornekVeri(); save(d); return d; }
-    const d = JSON.parse(raw);
-    d.turlar = Array.isArray(d.turlar) ? d.turlar : [];
-    d.daireler ||= []; d.odemeler ||= []; d.giderler ||= [];
-    d.daireler.forEach(x => { x.muaf = !!x.muaf; x.tip = x.tip === 'dukkan' ? 'dukkan' : 'daire'; });
-    d.aidat = Number(d.aidat) || 0;
-    d.devredenKasa = Number(d.devredenKasa) || 0;
-    return d;
-  } catch (e) {
-    return ornekVeri();
-  }
-}
-function save(next) {
-  if (next) DB = next;
-  try { localStorage.setItem(KEY, JSON.stringify(DB)); }
-  catch (e) { toast('Kayıt yapılamadı (depolama dolu olabilir)'); }
-  kayitDamgasi = new Date();
-}
-
-/* kayıt zamanı göstergesi */
-let kayitDamgasi = new Date();
-function saatStr(d) {
-  return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-}
-function kayitDurumCiz() {
-  const z = $('#kayit-zaman');
-  if (!z) return;
-  const bugun = kayitDamgasi.toISOString().slice(0, 10) === today();
-  z.textContent = `${bugun ? 'Bugün' : fmtTarih(kayitDamgasi.toISOString().slice(0, 10))} ${saatStr(kayitDamgasi)} · otomatik kaydedildi`;
-  $('#kayit-durum').classList.remove('dirty');
-  $('#kayit-dot').className = 'dot ok';
-}
-
-/* ---- kaydet & çık ---- */
-function kaydetCik() {
-  save();
-  kayitDurumCiz();
-  toast('Bilgiler kaydedildi. Çıkmak için sekmeyi kapatabilirsin.');
-  setTimeout(() => {
-    try { window.close(); } catch (e) {}
-    try { if (history.length > 1) history.back(); } catch (e) {}
-  }, 700);
-}
-
-/* ---------------- hesaplar ---------------- */
-const odenen = (daireId, ay) =>
-  DB.odemeler.filter(o => o.daireId === daireId && o.ay === ay).reduce((s, o) => s + Number(o.tutar || 0), 0);
-
-/* yönetici dairesi aidattan muaf mı? */
-const muafMi = d => !!(d && d.muaf);
-/* birimin (daire / dükkan) aylık aidatı */
-const birimAidat = d => (d && d.tip === 'dukkan' ? (Number(d.aidat) || 0) : DB.aidat);
-/* bir birimin o ay için aidat tutarı (muafsa 0) */
-const aidatTutar = (d, ay) => (muafMi(d) ? 0 : birimAidat(d));
-const birimAd = d => (d.tip === 'dukkan' ? 'Dükkan' : 'Daire');
-/* "1", "2A", "10/B" gibi numaraları doğal sırada dizer */
-function noSirala(a, b) {
-  const pa = String(a.no).match(/^(\d+)(.*)$/), pb = String(b.no).match(/^(\d+)(.*)$/);
-  if (pa && pb) {
-    const d = Number(pa[1]) - Number(pb[1]);
-    if (d) return d;
-    return pa[2].localeCompare(pb[2], 'tr', { numeric: true });
-  }
-  if (pa) return -1;
-  if (pb) return 1;
-  return String(a.no).localeCompare(String(b.no), 'tr', { numeric: true });
-}
-/* "1.750,50" / "1750,5" / "1750.50" gibi girişleri sayıya çevirir */
-function sayiCoz(v) {
-  let t = String(v ?? '').trim().replace(/\s|₺|TL/gi, '');
-  if (!t) return NaN;
-  if (t.includes(',') && t.includes('.')) {
-    t = t.lastIndexOf(',') > t.lastIndexOf('.')
-      ? t.replace(/\./g, '').replace(',', '.')
-      : t.replace(/,/g, '');
-  } else if (t.includes(',')) {
-    t = t.replace(',', '.');
-  } else if ((t.match(/\./g) || []).length > 1) {
-    t = t.replace(/\./g, '');
-  }
-  const n = Number(t);
-  return isFinite(n) ? n : NaN;
-}
-const birimler = () => DB.daireler;
-const ayniTip = (d, tip) => (d.tip || 'daire') === tip;
-/* bir birimin tüm ödemeleri (kasa) */
-const birimOdemeleri = d => DB.odemeler.filter(o => o.daireId === d.id);
-
-const ayOzet = ay => {
-  const tahsil = DB.odemeler.filter(o => o.ay === ay).reduce((s, o) => s + Number(o.tutar || 0), 0);
-  const dukkanTahsil = DB.odemeler.filter(o => o.ay === ay && daireBul(o.daireId)?.tip === 'dukkan')
-    .reduce((s, o) => s + Number(o.tutar || 0), 0);
-  const gider = DB.giderler.filter(g => g.ay === ay).reduce((s, g) => s + Number(g.tutar || 0), 0);
-  const toplamBeklenen = DB.daireler.reduce((s, d) => s + aidatTutar(d, ay), 0);
-  const borclu = DB.daireler.filter(d => odenen(d.id, ay) < aidatTutar(d, ay));
-  const bekleyen = borclu.reduce((s, d) => s + Math.max(0, aidatTutar(d, ay) - odenen(d.id, ay)), 0);
-  const tamOdeyen = DB.daireler.filter(d => aidatTutar(d, ay) > 0 && odenen(d.id, ay) >= aidatTutar(d, ay)).length;
-  const odenecek = DB.daireler.filter(d => aidatTutar(d, ay) > 0).length;
-  return { tahsil, dukkanTahsil, gider, net: tahsil - gider, bekleyen, borclu, toplamBeklenen, tamOdeyen, odenecek };
-};
-
-const kasaToplam = () =>
-  DB.devredenKasa + DB.odemeler.reduce((s, o) => s + Number(o.tutar || 0), 0)
-  - DB.giderler.reduce((s, g) => s + Number(g.tutar || 0), 0);
-
-const daireBul = id => DB.daireler.find(d => d.id === id);
-
-/* ---- daire bazlı borç ---- */
-// ödeme yapılmış en erken ay (yoksa cari ay)
-const baslangicAy = () => {
-  const aylar = DB.odemeler.map(o => o.ay).filter(Boolean).sort();
-  return aylar[0] && aylar[0] < ym() ? aylar[0] : ym();
-};
-// verilen aya kadar olan tüm aylar
-const ayListesi = son => {
-  const out = [];
-  let k = baslangicAy();
-  for (let i = 0; k <= son && i < 240; i++) { out.push(k); k = ayKaydir(k, 1); }
-  return out;
-};
-// bir dairenin borç dökümü
-function daireBorc(daireId, sonAy = ym()) {
-  const aylar = ayListesi(sonAy).map(ay => {
-    const odenenT = odenen(daireId, ay);
-    const kalan = Math.max(0, aidatTutar(daireBul(daireId), ay) - odenenT);
-    return { ay, odenen: odenenT, kalan };
-  });
-  const borcluAylar = aylar.filter(x => x.kalan > 0);
-  const toplam = borcluAylar.reduce((s, x) => s + x.kalan, 0);
-  const odedi = aylar.reduce((s, x) => s + x.odenen, 0);
-  return { aylar, borcluAylar, toplam, odedi, gecikmisAy: borcluAylar.length };
-}
-const toplamBorc = sonAy => DB.daireler.reduce((s, d) => s + daireBorc(d.id, sonAy).toplam, 0);
-
-/* ---------------- durum ---------------- */
-const state = { view: 'ozet', ay: ym(), ayAidat: ym(), ayGider: ym(), borcTab: 'acik', raporTab: 'ozet', aidatTip: 'daire', daireTab: 'liste' };
-
-/* ---------------- LİSANS ---------------- */
-const LISANS = {
-  yil: 2026,
-  sahip: 'Cemal Solmaz',
-  tel: '+90 532 205 01 97',
-  telLink: '+905322050197',
-  adres: 'Sümer Mahallesi 69126 Sokak Evliya Apt No:10 Zemin Kat No:10/A Seyhan/Adana',
-  mailler: ['cemalsolmaz@outlook.com', 'elumennet@hotmail.com', 'elumennet@gmail.com']
-};
-
-function lisansKisa() {
-  const el = $('#lic-kisa');
-  if (!el) return;
-  el.innerHTML = `
-    <b>© ${LISANS.yil} ${LISANS.sahip}</b>
-    <div class="licrow"><b>Sürüm</b><span>1.2 · ${LISANS.yil}</span></div>
-    <div class="licrow"><b>Lisans sahibi</b><span>${LISANS.sahip}</span></div>
-    <div class="licrow"><b>Telefon</b><span>${LISANS.tel}</span></div>
-    <div class="licrow"><b>E-posta</b><span>${LISANS.mailler[0]}</span></div>
-    <div class="tiny">Programın tüm hakları saklıdır. İzinsiz kopyalanamaz ve satılamaz.</div>`;
-}
-
-function lisansDialog() {
-  const wa = LISANS.telLink.replace('+', '');
-  sheet('Lisans Bilgileri', `
-    <div class="lic-sheet">
-      <div class="lblk">
-        <h4>Telif</h4>
-        <p><b>© ${LISANS.yil} ${LISANS.sahip}</b><br>
-        Program yapım yılı: <b>${LISANS.yil}</b><br>
-        Lisans sahibi: <b>${LISANS.sahip}</b></p>
-        <p>Programın tüm hakları saklıdır ve saklanmaktadır. İzinsiz kopyalanamaz ve satılamaz.</p>
-        <p>Bu yazılımın telif hakkı sahibi Cemal Solmaz'dır; <b>FSEK (5846 sayılı Kanun)</b> kapsamında korunur.</p>
+  <!-- ============ ÖZET ============ -->
+  <section class="view" id="v-ozet">
+    <header class="top">
+      <div>
+        <div class="eyebrow" id="ozet-bina" title="Bina seç / değiştir (dokun)">Bina</div>
+        <h1>Özet</h1>
       </div>
-      <div class="lblk">
-        <h4>📞 İletişim Bilgileri</h4>
-        <div class="li"><i>☎</i><span>Telefon: <a href="tel:${LISANS.telLink}">${LISANS.tel}</a></span></div>
-        <div class="li"><i>📍</i><span>Adres: ${LISANS.adres}</span></div>
-        ${LISANS.mailler.map(m => `<div class="li"><i>✉</i><span>Mail: <a href="mailto:${m}">${m}</a></span></div>`).join('')}
+      <div class="monthnav">
+        <button class="iconbtn" id="ay-geri" aria-label="Önceki ay">‹</button>
+        <span id="ay-adi">Ekim 2026</span>
+        <button class="iconbtn" id="ay-ileri" aria-label="Sonraki ay">›</button>
       </div>
+      <button class="iconbtn exit" id="btn-cikis" aria-label="Kaydet ve çık" title="Kaydet ve çık">
+        <svg viewBox="0 0 24 24"><path d="M10 17l1.4-1.4-2.6-2.6H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zM4 3h8v2H6v14h6v2H4V3z"/></svg>
+      </button>
+    </header>
+
+    <div class="card savecard" id="kayit-durum">
+      <span class="dot ok" id="kayit-dot"></span>
+      <div class="main">
+        <div class="t1">Bilgiler kayıtlı</div>
+        <div class="t2" id="kayit-zaman">Değişiklikler otomatik kaydedilir</div>
+      </div>
+      <button class="mini" id="btn-kaydet-cik">Kaydet &amp; çık</button>
+    </div>
+
+    <div class="card red" id="gecikme-uyari" style="display:none;align-items:center;justify-content:space-between;gap:10px">
+      <span class="dot no" style="flex:none"></span>
+      <div class="main">
+        <div class="t1">Geciken aidat — <b id="gecikme-tutar">0 ₺</b></div>
+        <div class="t2" id="gecikme-sub">—</div>
+      </div>
+      <button class="mini" id="btn-hatirlat">Hatırlat</button>
+    </div>
+
+    <div class="cards">
+      <div class="card green">
+        <div class="clabel">Tahsil edilen</div>
+        <div class="cval" id="k-tahsil">0 ₺</div>
+        <div class="csub" id="k-tahsil-sub">0 / 0 daire</div>
+      </div>
+      <div class="card red">
+        <div class="clabel">Gider</div>
+        <div class="cval" id="k-gider">0 ₺</div>
+        <div class="csub" id="k-gider-sub">0 kayıt</div>
+      </div>
+      <div class="card blue">
+        <div class="clabel">Net bakiye</div>
+        <div class="cval" id="k-net">0 ₺</div>
+        <div class="csub" id="k-net-sub">tahsil − gider</div>
+      </div>
+      <div class="card amber">
+        <div class="clabel">Bekleyen aidat</div>
+        <div class="cval" id="k-bekleyen">0 ₺</div>
+        <div class="csub" id="k-bekleyen-sub">0 daire</div>
+      </div>
+      <div class="card teal">
+        <div class="clabel">Dükkan geliri</div>
+        <div class="cval" id="k-dukkan">0 ₺</div>
+        <div class="csub" id="k-dukkan-sub">0 dükkan · kasaya dahil</div>
+      </div>
+    </div>
+
+    <div class="progresswrap">
+      <div class="prow"><span>Tahsilat oranı</span><b id="oran">%0</b></div>
+      <div class="bar"><i id="oran-bar"></i></div>
+    </div>
+
+    <h2 class="sect">Kasa</h2>
+    <div class="panel kasa">
+      <div><span>Devreden kasa</span><b id="kasa-devreden">0 ₺</b></div>
+      <div><span>Kasa toplam</span><b id="kasa-toplam">0 ₺</b></div>
+    </div>
+
+    <h2 class="sect">Ödenmeyen daire / dükkanlar</h2>
+    <div id="ozet-borc"></div>
+
+    <h2 class="sect">Son hareketler</h2>
+    <div id="ozet-son"></div>
+
+    <p class="telif">© 2026 Cemal Solmaz · Tüm hakları saklıdır.<br>
+      <button class="linkbtn" id="link-lisans">Lisans bilgileri</button></p>
+  </section>
+
+  <!-- ============ AİDAT ============ -->
+  <section class="view" id="v-aidat" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Aylık aidat</div>
+        <h1 id="aidat-ay">Ekim 2026</h1>
+      </div>
+      <div class="monthnav">
+        <button class="iconbtn" id="a-geri" aria-label="Önceki ay">‹</button>
+        <button class="iconbtn" id="a-ileri" aria-label="Sonraki ay">›</button>
+      </div>
+    </header>
+
+    <div class="tabs" id="aidat-tabs">
+      <button class="tab on" data-tip="daire">Daireler</button>
+      <button class="tab" data-tip="dukkan">Dükkanlar</button>
+    </div>
+
+    <div class="panel row">
+      <div>
+        <div class="clabel" id="aidat-baslik">Bu ayın aidatı</div>
+        <div class="cval sm" id="aidat-tutar">0 ₺</div>
+      </div>
+      <div class="btnrow" style="margin:0">
+        <button class="btn ghost" id="btn-pusula" style="padding:10px 12px">Pusula (PDF)</button>
+        <button class="btn" id="btn-toplu">Tümünü tahsil et</button>
+      </div>
+    </div>
+
+    <div id="aidat-liste" class="list"></div>
+  </section>
+
+  <!-- ============ GİDER ============ -->
+  <section class="view" id="v-gider" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Giderler</div>
+        <h1 id="gider-ay">Ekim 2026</h1>
+      </div>
+      <div class="monthnav">
+        <button class="iconbtn" id="g-geri" aria-label="Önceki ay">‹</button>
+        <button class="iconbtn" id="g-ileri" aria-label="Sonraki ay">›</button>
+      </div>
+    </header>
+
+    <div class="panel row">
+      <div>
+        <div class="clabel">Bu ayın gideri</div>
+        <div class="cval sm red-text" id="gider-toplam">0 ₺</div>
+      </div>
+      <button class="btn danger" id="btn-gider-ekle">+ Gider</button>
+    </div>
+
+    <div id="gider-liste" class="list"></div>
+  </section>
+
+  <!-- ============ BORÇ DURUMU ============ -->
+  <section class="view" id="v-borc" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Daire borçları</div>
+        <h1>Borç Durumu</h1>
+      </div>
+    </header>
+
+    <div class="cards">
+      <div class="card red">
+        <div class="clabel">Toplam borç</div>
+        <div class="cval" id="b-toplam">0 ₺</div>
+        <div class="csub" id="b-toplam-sub">0 daire</div>
+      </div>
+      <div class="card green">
+        <div class="clabel">Borcu olmayan</div>
+        <div class="cval" id="b-temiz">0</div>
+        <div class="csub" id="b-temiz-sub">daire</div>
+      </div>
+    </div>
+
+    <div class="tabs" id="borc-tip-tabs">
+      <button class="tab on" data-tip="daire">Daireler</button>
+      <button class="tab" data-tip="dukkan">Dükkanlar</button>
+    </div>
+
+    <div class="tabs" id="borc-tabs">
+      <button class="tab on" data-b="acik">Açık borçlar</button>
+      <button class="tab" data-b="gecmis">Geçmiş aylar</button>
+      <button class="tab" data-b="tumu">Tüm daireler</button>
+    </div>
+
+    <div id="borc-liste" class="list"></div>
+  </section>
+
+  <!-- ============ RAPOR ============ -->
+  <section class="view" id="v-rapor" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Son 12 ay</div>
+        <h1>Rapor</h1>
+      </div>
+      <button class="iconbtn exit" id="btn-rapor-cikis" aria-label="Kaydet ve çık" title="Kaydet ve çık">
+        <svg viewBox="0 0 24 24"><path d="M10 17l1.4-1.4-2.6-2.6H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zM4 3h8v2H6v14h6v2H4V3z"/></svg>
+      </button>
+    </header>
+
+    <div class="cards">
+      <div class="card green">
+        <div class="clabel">12 aylık gelir</div>
+        <div class="cval" id="r-gelir">0 ₺</div>
+        <div class="csub" id="r-gelir-sub">aidat tahsilatı</div>
+      </div>
+      <div class="card red">
+        <div class="clabel">12 aylık gider</div>
+        <div class="cval" id="r-gider">0 ₺</div>
+        <div class="csub" id="r-gider-sub">0 kayıt</div>
+      </div>
+    </div>
+    <div class="progresswrap" style="margin-top:10px">
+      <div class="prow"><span>12 aylık net</span><b id="r-net">0 ₺</b></div>
+      <div class="prow" style="margin-top:6px"><span>Ortalama aylık gider</span><b id="r-ort">0 ₺</b></div>
+    </div>
+
+    <div class="tabs" id="rapor-tabs">
+      <button class="tab on" data-r="ozet">Tablo</button>
+      <button class="tab" data-r="grafik">Grafik</button>
+      <button class="tab" data-r="kalem">Kalemler</button>
+      <button class="tab" data-r="dukkan">Dükkanlar</button>
+    </div>
+
+    <div id="rapor-icerik"></div>
+
+    <div class="btnrow" style="margin-top:16px">
+      <button class="btn ghost" id="btn-rapor-kopyala">Raporu metin olarak paylaş</button>
+      <button class="btn ghost" id="btn-rapor-pdf">Yönetim raporu (PDF)</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn ghost" id="btn-csv-odeme">Ödemeler CSV</button>
+      <button class="btn ghost" id="btn-csv-gider">Giderler CSV</button>
+    </div>
+  </section>
+
+  <!-- ============ DAİRELER ============ -->
+  <section class="view" id="v-daire" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Bina yönetimi</div>
+        <h1>Daireler</h1>
+      </div>
+      <button class="btn ghost" id="btn-dukkan-toplu" hidden style="padding:11px 12px">Toplu dükkan</button>
+      <button class="btn" id="btn-daire-ekle">+ Daire</button>
+      <button class="iconbtn exit" id="btn-cikis2" aria-label="Kaydet ve çık" title="Kaydet ve çık">
+        <svg viewBox="0 0 24 24"><path d="M10 17l1.4-1.4-2.6-2.6H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zM4 3h8v2H6v14h6v2H4V3z"/></svg>
+      </button>
+    </header>
+
+    <div class="tabs" id="daire-tabs">
+      <button class="tab on" data-t="liste">Daireler</button>
+      <button class="tab" data-t="giderler">Gider kalemleri</button>
+      <button class="tab" data-t="ayarlar">Ayarlar</button>
+    </div>
+
+    <div class="tabs" id="unit-tabs">
+      <button class="tab on" data-u="daire">Daireler</button>
+      <button class="tab" data-u="dukkan">Dükkanlar</button>
+    </div>
+    <p class="hint" id="unit-ozet"></p>
+    <div id="daire-liste"></div>
+
+    <div id="daire-giderler" hidden>
+      <p class="hint">Gider eklerken kalem adını kendin yazabilirsin; buradaki liste sadece kısayol/öneri listesidir.</p>
+      <div id="tur-liste" class="chips"></div>
       <div class="btnrow">
-        <button class="btn" id="lic-ara">Telefon et</button>
-        <button class="btn ghost" id="lic-wa">WhatsApp</button>
+        <button class="btn ghost" id="btn-tur-ekle">+ Kalem yaz</button>
+        <button class="btn ghost danger" id="btn-tur-temizle">Listeyi temizle</button>
       </div>
+    </div>
+
+    <div id="daire-ayarlar" hidden>
+      <label class="field"><span>Bina adı</span><input id="set-bina" placeholder="Örn. Yeşil Apartmanı"></label>
+      <label class="field"><span>Aylık aidat (₺)</span><input id="set-aidat" type="number" inputmode="decimal" step="1" min="0"></label>
+      <label class="field"><span>Aidat günü (ayın kaçı)</span><input id="set-gun" type="number" inputmode="numeric" min="1" max="28"></label>
+      <label class="field"><span>Devreden kasa (₺)</span><input id="set-kasa" type="number" inputmode="decimal" step="1"></label>
+
+      <h2 class="sect">Yıllık aidat geçmişi</h2>
+      <p class="hint">Aidat tutarı değişince yeni yıl ekleyin; geçmiş aylar o tarihteki tutarla hesaplanır. Yıl eklemezseniz tüm aylar için yukarıdaki güncel aidat kullanılır.</p>
+      <div id="aidat-yil-liste" class="chips"></div>
+      <div class="btnrow" style="margin-top:8px"><button class="btn ghost" id="btn-yil-ekle">+ Yıl ekle</button></div>
+
+      <h2 class="sect">Çoklu bina</h2>
+      <p class="hint">Birden fazla apartmanı aynı programda yönetin: aktif bina tüm ekranlarda geçerli, verileri birbirinden ayrıdır.</p>
+      <div id="bina-liste" class="chips"></div>
+      <div class="btnrow" style="margin-top:8px"><button class="btn ghost" id="btn-bina-yeni">+ Yeni bina ekle</button></div>
+
+      <h2 class="sect">Manuel borçlar (aktif bina)</h2>
+      <div id="ek-borc-liste" class="list" style="margin-top:8px"></div>
+
+      <h2 class="sect">Dükkanlar</h2>
+      <p class="hint" id="dukkan-ayar-ozet">—</p>
+      <div class="btnrow"><button class="btn ghost" id="btn-dukkan-toplu2">Dükkanları topluca ekle</button></div>
+
+      <h2 class="sect">Aidattan muaf birimler</h2>
+      <p class="hint" id="muaf-ozet">—</p>
+      <div class="chips" id="muaf-liste"></div>
+      <button class="btn ghost" id="btn-muaf-sec" style="margin-top:10px">Muaf birimleri seç</button>
+      <button class="btn" id="btn-ayar-kaydet" style="margin-top:14px">Kaydet</button>
+
+      <h2 class="sect">Yedekleme</h2>
+      <p class="hint">Veriler yalnızca bu telefonda saklanır. Telefon değiştirirken yedek al, yeni telefonda geri yükle.</p>
       <div class="btnrow">
-        <button class="btn ghost" id="lic-mail">E-posta gönder</button>
-        <button class="btn ghost" id="lic-kapat">Kapat</button>
+        <button class="btn ghost" id="btn-yedek">Yedek al</button>
+        <button class="btn ghost" id="btn-geri-yukle">Yedekten geri yükle</button>
       </div>
-      <p class="hint" style="text-align:center;margin-top:14px">© ${LISANS.yil} ${LISANS.sahip} · Tüm hakları saklıdır.</p>
-    </div>
-  `);
-  $('#lic-ara').onclick = () => { location.href = 'tel:' + LISANS.telLink; };
-  $('#lic-wa').onclick = () => window.open(`https://wa.me/${wa}`, '_blank');
-  $('#lic-mail').onclick = () => { location.href = 'mailto:' + LISANS.mailler[0] + '?subject=' + encodeURIComponent('Aidat programı hakkında'); };
-  $('#lic-kapat').onclick = sheetKapat;
-}
-
-/* ---------------- çizim: ÖZET ---------------- */
-function renderOzet() {
-  const ay = state.ay, s = ayOzet(ay), n = DB.daireler.length;
-  $('#ozet-bina').textContent = DB.bina || 'Bina';
-  kayitDurumCiz();
-  $('#ay-adi').textContent = ayAdi(ay);
-
-  $('#k-tahsil').textContent = fmt(s.tahsil);
-  $('#k-tahsil-sub').textContent = `${s.tamOdeyen} / ${n} daire ödedi`;
-  $('#k-gider').textContent = fmt(s.gider);
-  const gs = DB.giderler.filter(g => g.ay === ay).length;
-  $('#k-gider-sub').textContent = `${gs} kayıt`;
-  $('#k-net').textContent = fmt(s.net);
-  $('#k-net-sub').textContent = s.net >= 0 ? 'ay pozitif kapandı' : 'ay ekside';
-  $('#k-bekleyen').textContent = fmt(s.bekleyen);
-  $('#k-bekleyen-sub').textContent = `${s.borclu.length} daire ödemedi`;
-
-  const oran = s.toplamBeklenen > 0 ? Math.min(100, Math.round(s.tahsil / s.toplamBeklenen * 100)) : 0;
-  $('#oran').textContent = `%${oran}`;
-  $('#oran-bar').style.width = oran + '%';
-
-  const dk = $('#k-dukkan');
-  if (dk) {
-    const dukkanlar = birimler().filter(d => d.tip === 'dukkan');
-    dk.textContent = fmt(s.dukkanTahsil);
-    $('#k-dukkan-sub').textContent = `${dukkanlar.length} dükkan · kasaya dahil`;
-  }
-  $('#kasa-devreden').textContent = fmt(DB.devredenKasa);
-  $('#kasa-toplam').textContent = fmt(kasaToplam());
-
-  // ödenmeyen daireler
-  const el = $('#ozet-borc');
-  if (!DB.daireler.length) {
-    el.innerHTML = `<div class="empty">Henüz daire yok. <b>Daireler</b> sekmesinden ekleyebilirsin.</div>`;
-  } else if (!s.borclu.length) {
-    el.innerHTML = `<div class="empty">🎉 Bu ay tüm daireler aidatını ödedi.</div>`;
-  } else {
-    el.innerHTML = `<div class="list">` + s.borclu
-      .sort((a, b) => noSirala(a, b))
-      .map(d => {
-        const o = odenen(d.id, ay), kalan = Math.max(0, aidatTutar(d, ay) - o);
-        return `<div class="item" data-borc="${d.id}">
-          <span class="dot no"></span>
-          <div class="main"><div class="t1">${birimAd(d)} ${esc(d.no)}${d.ad ? ' · ' + esc(d.ad) : ''}</div>
-            <div class="t2">${o > 0 ? `Kısmi ödeme: ${fmt(o)}` : 'Ödeme yapılmadı'}</div></div>
-          <div class="amt minus">${fmt(kalan)}</div>
-        </div>`;
-      }).join('') + `</div>`;
-  }
-
-  // son hareketler
-  const har = [
-    ...DB.odemeler.map(o => ({ t: 'in', tarih: o.tarih, tutar: o.tutar, ad: `Aidat · ${daireBul(o.daireId) ? birimAd(daireBul(o.daireId)) : 'Daire'} ${daireBul(o.daireId)?.no ?? '?'}`, alt: o.ay ? ayAdi(o.ay) : '' })),
-    ...DB.giderler.map(g => ({ t: 'out', tarih: g.tarih, tutar: g.tutar, ad: g.aciklama || g.tur, alt: g.tur }))
-  ].sort((a, b) => (b.tarih || '').localeCompare(a.tarih || '')).slice(0, 8);
-
-  $('#ozet-son').innerHTML = har.length
-    ? `<div class="list">` + har.map(h => `<div class="item">
-        <span class="dot ${h.t === 'in' ? 'ok' : 'no'}"></span>
-        <div class="main"><div class="t1">${esc(h.ad)}</div>
-          <div class="t2">${esc(h.alt)}${h.tarih ? ' · ' + fmtTarih(h.tarih) : ''}</div></div>
-        <div class="amt ${h.t === 'in' ? 'plus' : 'minus'}">${h.t === 'in' ? '+' : '−'}${fmt(h.tutar)}</div>
-      </div>`).join('') + `</div>`
-    : `<div class="empty">Henüz hareket yok.</div>`;
-}
-
-/* ---------------- çizim: AİDAT ---------------- */
-function renderAidat() {
-  const ay = state.ayAidat;
-  $('#aidat-ay').textContent = ayAdi(ay);
-  const tipA = state.aidatTip === 'dukkan' ? 'dukkan' : 'daire';
-  const listem = birimler().filter(d => ayniTip(d, tipA));
-  const dukkanTutar = listem.reduce((s, d) => s + aidatTutar(d, ay), 0);
-  const ab = $('#aidat-baslik');
-  if (ab) ab.textContent = tipA === 'dukkan' ? 'Dükkan aidatları (her dükkan farklı)' : 'Bu ayın aidatı';
-  $('#aidat-tutar').textContent = (tipA === 'dukkan')
-    ? (listem.length ? `Aylık toplam ${fmt(dukkanTutar)}` : 'Dükkan aidatı girilmemiş')
-    : fmt(DB.aidat) + ' / daire';
-  const el = $('#aidat-liste');
-  const ilkBorc = listem.filter(d => odenen(d.id, ay) < aidatTutar(d, ay)).length;
-  const tb = $('#btn-toplu');
-  tb.textContent = ilkBorc ? `Tümünü tahsil et (${ilkBorc})` : 'Hepsi ödedi';
-  tb.disabled = ilkBorc === 0;
-
-  if (!listem.length) {
-    el.innerHTML = `<div class="empty">Önce <b>Daireler</b> sekmesinden ${tipA === 'dukkan' ? 'dükkan' : 'daire'} ekle.</div>`;
-    return;
-  }
-  const rows = [...listem].sort((a, b) => noSirala(a, b));
-  el.innerHTML = rows.map(d => {
-    const o = odenen(d.id, ay), tar = aidatTutar(d, ay), tam = tar > 0 && o >= tar;
-    const kalan = Math.max(0, tar - o);
-    const durum = tar === 0 ? 'muaf' : (tam ? 'ok' : (o > 0 ? 'half' : 'no'));
-    return `<div class="rowaidat ${tam ? 'paid' : ''}" data-daire="${d.id}">
-      <span class="dot ${durum}"></span>
-      <div class="main" data-detay="${d.id}">
-        <div class="daire">${birimAd(d)} ${esc(d.no)}</div>
-        <div class="meta">${esc(d.ad || 'İsim yok')}${muafMi(d) ? ' · <b class="muaf">Muaf</b>' : (o > 0 ? ' · ' + fmt(o) + ' ödendi' : '')}</div>
+      <input type="file" id="dosya" accept="application/json,.json" hidden>
+      <div class="btnrow" style="margin-top:22px">
+        <button class="btn ghost" id="btn-ornek">Örnek veri yükle</button>
+        <button class="btn danger ghost" id="btn-sifirla">Tümünü sil</button>
       </div>
-      <div class="right">
-        ${!tam && o > 0 && tar > 0 ? `<span class="borc-pill">${fmt(kalan)}</span>` : ''}
-        ${tar === 0
-          ? `<span class="tick muaf-tick" title="Aidattan muaf">M</span>`
-          : `<button class="tick ${tam ? 'on' : (o > 0 ? 'part' : '')}" data-tick="${d.id}" aria-label="Ödendi işaretle">${tam ? '✓' : (o > 0 ? '~' : '○')}</button>`}
+      <p class="hint" style="margin-top:18px">Sürüm 1.4 · çevrimdışı çalışır</p>
+
+      <h2 class="sect">Lisans &amp; Hakkında</h2>
+      <div class="licbox" id="lic-kisa"></div>
+      <button class="btn ghost" id="btn-lisans" style="margin-top:10px;width:100%">Lisans bilgilerini görüntüle</button>
+      <div class="btnrow" style="margin-top:6px">
+        <button class="btn ghost danger" id="btn-cikis3">Kaydet &amp; çık</button>
       </div>
-    </div>`;
-  }).join('');
-}
-
-/* ---------------- çizim: GİDER ---------------- */
-function renderGider() {
-  const ay = state.ayGider;
-  $('#gider-ay').textContent = ayAdi(ay);
-  const list = DB.giderler.filter(g => g.ay === ay)
-    .sort((a, b) => (b.tarih || '').localeCompare(a.tarih || ''));
-  const top = list.reduce((s, g) => s + Number(g.tutar || 0), 0);
-  $('#gider-toplam').textContent = fmt(top);
-
-  $('#gider-liste').innerHTML = list.length
-    ? list.map(g => `<div class="item" data-gider="${g.id}">
-        <span class="dot no"></span>
-        <div class="main"><div class="t1">${esc(g.aciklama || g.tur)}</div>
-          <div class="t2">${esc(g.tur)}${g.tarih ? ' · ' + fmtTarih(g.tarih) : ''}</div></div>
-        <div class="amt minus">−${fmt(g.tutar)}</div>
-      </div>`).join('')
-    : `<div class="empty">Bu ay gider kaydı yok.</div>`;
-}
-
-/* ---------------- çizim: BORÇ DURUMU ---------------- */
-function renderBorc() {
-  const sonAy = ym();
-  const tip = state.borcTip || 'daire';
-  const grup = birimler().filter(d => ayniTip(d, tip));
-  const n = grup.length;
-  const data = grup.map(d => ({ d, b: daireBorc(d.id, sonAy) }))
-    .sort((x, y) => y.b.toplam - x.b.toplam || noSirala(x.d, y.d));
-  const toplam = data.reduce((s, x) => s + x.b.toplam, 0);
-  const borclu = data.filter(x => x.b.toplam > 0);
-  const temiz = data.filter(x => x.b.toplam <= 0);
-
-  $('#b-toplam').textContent = fmt(toplam);
-  const soz = tip === 'dukkan' ? 'dükkan' : 'daire';
-  $('#b-toplam-sub').textContent = `${borclu.length} ${soz} borçlu`;
-  $('#b-temiz').textContent = String(temiz.length);
-  $('#b-temiz-sub').textContent = `toplam ${n} ${soz}`;
-
-  document.querySelectorAll('#borc-tabs .tab').forEach(t => t.classList.toggle('on', t.dataset.b === state.borcTab));
-  const el = $('#borc-liste');
-  if (!n) { el.innerHTML = `<div class="empty">Henüz ${tip === 'dukkan' ? 'dükkan' : 'daire'} yok.</div>`; return; }
-
-  if (state.borcTab === 'acik') {
-    el.innerHTML = borclu.length ? borclu.map(({ d, b }) => kart(d, b, sonAy)).join('')
-      : `<div class="empty">🎉 Tüm ${soz}lerin borcu yok. Her şey güncel.</div>`;
-  } else if (state.borcTab === 'gecmis') {
-    const aylar = ayListesi(sonAy).filter(ay => ay < sonAy).reverse();
-    if (!aylar.length) { el.innerHTML = `<div class="empty">Henüz geçmiş ay yok.</div>`; return; }
-    el.innerHTML = aylar.map(ay => {
-      const kalanTop = grup.reduce((s, d) => s + Math.max(0, aidatTutar(d, ay) - odenen(d.id, ay)), 0);
-      const kisi = grup.filter(d => odenen(d.id, ay) < aidatTutar(d, ay)).length;
-      return `<div class="item" data-aydetay="${ay}">
-        <span class="dot ${kisi ? 'no' : 'ok'}"></span>
-        <div class="main"><div class="t1">${ayAdi(ay)}</div>
-          <div class="t2">${kisi ? kisi + ' ' + soz + ' ödemedi' : 'Tamamı ödendi'}</div></div>
-        <div class="amt ${kalanTop ? 'minus' : 'plus'}">${kalanTop ? fmt(kalanTop) : '✓'}</div>
-      </div>`;
-    }).join('');
-  } else {
-    el.innerHTML = data.map(({ d, b }) => kart(d, b, sonAy)).join('');
-  }
-}
-
-function kart(d, b, sonAy) {
-  const durum = b.toplam <= 0 ? 'ok' : (b.odenen > 0 && b.gecikmisAy === 1 ? 'half' : 'no');
-  const alt = b.toplam <= 0
-    ? (b.odenen > 0 ? 'Ödemeler tam' : 'Ödeme kaydı yok')
-    : `${b.gecikmisAy} ay ödenmemiş${b.odenen > 0 ? ' · ' + fmt(b.odenen) + ' ödenmiş' : ''}`;
-  return `<div class="item" data-borclu="${d.id}">
-    <span class="dot ${durum}"></span>
-    <div class="main"><div class="t1">${birimAd(d)} ${esc(d.no)}${d.ad ? ' · ' + esc(d.ad) : ''}</div>
-      <div class="t2">${alt}</div></div>
-    <div class="amt ${b.toplam ? 'minus' : 'plus'}">${b.toplam ? fmt(b.toplam) : '✓'}</div>
-  </div>`;
-}
-
-function borcDialog(daireId) {
-  const d = daireBul(daireId); if (!d) return;
-  const b = daireBorc(daireId, ym());
-  const satir = x => `<div class="item">
-      <span class="dot ${x.kalan ? 'no' : 'ok'}"></span>
-      <div class="main"><div class="t1">${ayAdi(x.ay)}</div>
-        <div class="t2">${x.odenen ? fmt(x.odenen) + ' ödendi' : 'Ödeme yok'}</div></div>
-      <div class="amt ${x.kalan ? 'minus' : 'plus'}">${x.kalan ? fmt(x.kalan) : '✓'}</div>
-    </div>`;
-  sheet(`${birimAd(d)} ${d.no} — borç`, `
-    <p class="hint">${esc(d.ad || 'İsim yok')} · bugüne kadar</p>
-    <div class="panel row" style="margin-top:6px">
-      <div><div class="clabel">Toplam borç</div><div class="cval sm red-text">${fmt(b.toplam)}</div></div>
-      <div style="text-align:right"><div class="clabel">Ödenen</div><div class="cval sm green-text">${fmt(b.odenen)}</div></div>
     </div>
-    ${b.toplam > 0 ? `<button class="btn" id="bd-kapat" style="width:100%;margin-top:12px">Tüm borcu tahsil et</button>` : ''}
-    <h2 class="sect">Aylara göre</h2>
-    <div class="list">${b.aylar.slice().reverse().map(satir).join('')}</div>
-  `);
-  const btn = $('#bd-kapat');
-  if (btn) btn.onclick = () => {
-    b.borcluAylar.forEach(x => {
-      DB.odemeler.push({ id: uid(), daireId, ay: x.ay, tutar: x.kalan, tarih: today() });
-    });
-    save(); sheetKapat(); renderAll();
-    toast(`${birimAd(d)} ${d.no} · ${fmt(b.toplam)} borç kapatıldı`);
-  };
-}
+  </section>
 
-/* ---------------- çizim: RAPOR (12 ay) ---------------- */
-function raporAylari() {
-  const son = ym();
-  const out = [];
-  for (let i = 11; i >= 0; i--) {
-    const ay = ayKaydir(son, -i);
-    const gelir = DB.odemeler.filter(o => o.ay === ay).reduce((s, o) => s + Number(o.tutar || 0), 0);
-    const dukkan = DB.odemeler.filter(o => o.ay === ay && daireBul(o.daireId)?.tip === 'dukkan')
-      .reduce((s, o) => s + Number(o.tutar || 0), 0);
-    const gider = DB.giderler.filter(g => g.ay === ay).reduce((s, g) => s + Number(g.tutar || 0), 0);
-    const daireSay = DB.daireler.filter(d => odenen(d.id, ay) > 0).length;
-    out.push({ ay, gelir, dukkan, gider, net: gelir - gider, daireSay, gecerli: ay <= son });
-  }
-  return out;
-}
-const paraKisa = n => (Math.abs(n) >= 1000 ? (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1).replace('.', ',') + 'b' : String(Math.round(n)));
+  <!-- ============ ALT MENÜ ============ -->
+  <nav class="tabs-bottom" id="nav">
+    <button class="on" data-v="ozet">
+      <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+      <span>Özet</span>
+    </button>
+    <button data-v="aidat">
+      <svg viewBox="0 0 24 24"><path d="M12 2 2 8v2h20V8L12 2zM4 12v6H2v2h20v-2h-2v-6h-2v6h-3v-6h-2v6H8v-6H6v6H4v-6z"/></svg>
+      <span>Aidat</span>
+    </button>
+    <button data-v="gider">
+      <svg viewBox="0 0 24 24"><path d="M3 3h18v4H3V3zm0 6h18v4H3V9zm0 6h18v4H3v-4zm4 1.5h4v1H7v-1z"/></svg>
+      <span>Gider</span>
+    </button>
+    <button data-v="borc">
+      <svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.6 3.8 10.7 9 12 5.2-1.3 9-6.4 9-12V5l-9-4zm1 17h-2v-2h2v2zm0-4h-2V7h2v7z"/></svg>
+      <span>Borç</span>
+    </button>
+    <button data-v="rapor">
+      <svg viewBox="0 0 24 24"><path d="M5 21h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2zM7 17V9h2v8H7zm4 0V5h2v12h-2zm4 0v-6h2v6h-2z"/></svg>
+      <span>Rapor</span>
+    </button>
+    <button data-v="daire">
+      <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4.4 0-8 2.2-8 5v3h16v-3c0-2.8-3.6-5-8-5z"/></svg>
+      <span>Daireler</span>
+    </button>
+  </nav>
 
-function renderRapor() {
-  const aylar = raporAylari();
-  const gelir = aylar.reduce((s, x) => s + x.gelir, 0);
-  const gider = aylar.reduce((s, x) => s + x.gider, 0);
-  const giderAdet = DB.giderler.filter(g => aylar.some(x => x.ay === g.ay)).length;
-  const bugunAy = ym();
-
-  $('#r-gelir').textContent = fmt(gelir);
-  const dukkanGelir = aylar.reduce((s, x) => s + x.dukkan, 0);
-  $('#r-gelir-sub').textContent = `daire ${fmt(gelir - dukkanGelir)} · dükkan ${fmt(dukkanGelir)}`;
-  $('#r-gider').textContent = fmt(gider);
-  $('#r-gider-sub').textContent = `${giderAdet} kayıt`;
-  $('#r-net').textContent = fmt(gelir - gider);
-  $('#r-ort').textContent = fmt(gider / 12);
-
-  document.querySelectorAll('#rapor-tabs .tab').forEach(t => t.classList.toggle('on', t.dataset.r === state.raporTab));
-  const el = $('#rapor-icerik');
-
-  if (state.raporTab === 'ozet') {
-    el.innerHTML = `<div class="rtab">
-      <div class="rrow head"><span>Ay</span><span class="num">Gelir</span><span class="num">Gider</span><span class="num">Net</span></div>
-      ${aylar.map(x => `<div class="rrow ${x.net < 0 ? 'net-neg' : 'net-pos'} ${x.ay === bugunAy ? 'now' : ''}" data-raporay="${x.ay}">
-        <span class="r-ay">${MONTHS[Number(x.ay.split('-')[1]) - 1].slice(0, 3)} ${x.ay.slice(2, 4)}</span>
-        <span class="num in">${x.gelir ? fmt(x.gelir) : '—'}</span>
-        <span class="num out">${x.gider ? fmt(x.gider) : '—'}</span>
-        <span class="num net">${fmt(x.net)}</span>
-      </div>`).join('')}
-      <div class="rrow head" style="border-top:1px solid var(--line)">
-        <span>Toplam</span><span class="num in">${fmt(gelir)}</span><span class="num out">${fmt(gider)}</span>
-        <span class="num net">${fmt(gelir - gider)}</span></div>
+  <!-- ============ DİYALOG ============ -->
+  <div class="sheet-wrap" id="sheet-wrap" hidden>
+    <div class="sheet-bg" id="sheet-bg"></div>
+    <div class="sheet" id="sheet">
+      <div class="grab"></div>
+      <h3 id="sheet-title">Başlık</h3>
+      <div id="sheet-body"></div>
     </div>
-    <p class="hint">Bir aya dokunursan Özet o aya geçer.</p>`;
-  }
+  </div>
 
-  if (state.raporTab === 'grafik') {
-    const max = Math.max(1, ...aylar.map(x => Math.max(x.gelir, x.gider)));
-    el.innerHTML = `<div class="chart">
-      <div class="bars">
-        ${aylar.map(x => `<div class="col ${x.ay === bugunAy ? 'today' : ''}" data-raporay="${x.ay}" title="${ayAdi(x.ay)} · gelir ${fmt(x.gelir)} / gider ${fmt(x.gider)}">
-          <div class="pair">
-            <div class="b" style="height:${Math.round(x.gelir / max * 100)}%"></div>
-            <div class="b out" style="height:${Math.round(x.gider / max * 100)}%"></div>
-          </div>
-          <div class="lbl">${MONTHS[Number(x.ay.split('-')[1]) - 1].slice(0, 3)}<br>${x.ay.slice(2, 4)}</div>
-        </div>`).join('')}
-      </div>
-      <div class="legend"><span><i class="g"></i>Gelir</span><span><i class="r"></i>Gider</span></div>
-    </div>
-    <div class="panel" style="margin-top:10px">
-      <div class="prow"><span>En yüksek gider ayı</span><b>${ayAdi(aylar.slice().sort((a, b) => b.gider - a.gider)[0].ay)}</b></div>
-      <div class="prow" style="margin-top:6px"><span>En iyi ay (net)</span><b>${ayAdi(aylar.slice().sort((a, b) => b.net - a.net)[0].ay)}</b></div>
-      <div class="prow" style="margin-top:6px"><span>En kötü ay (net)</span><b>${ayAdi(aylar.slice().sort((a, b) => a.net - b.net)[0].ay)}</b></div>
-    </div>`;
-  }
-
-  if (state.raporTab === 'dukkan') {
-    const dukkanlar = birimler().filter(d => d.tip === 'dukkan');
-    if (!dukkanlar.length) { el.innerHTML = `<div class="empty">Henüz dükkan kaydı yok.</div>`; return; }
-    const son12 = aylar.map(x => x.ay);
-    const rows = dukkanlar.map(d => {
-      const o = DB.odemeler.filter(x => x.daireId === d.id && son12.includes(x.ay));
-      const toplam = o.reduce((s, x) => s + Number(x.tutar || 0), 0);
-      return { d, toplam };
-    }).sort((a, b) => b.toplam - a.toplam);
-    const top = rows.reduce((s, r) => s + r.toplam, 0);
-    el.innerHTML = `<div class="rtab">
-      <div class="rrow head" style="grid-template-columns:1fr 1fr"><span>Dükkan</span><span class="num">12 aylık gelir</span></div>
-      ${rows.map(r => `<div class="rrow" style="grid-template-columns:1fr 1fr" data-borclu="${r.d.id}">
-        <span class="r-ay">${esc(r.d.no)}${r.d.ad ? ' · ' + esc(r.d.ad) : ''}</span>
-        <span class="num in">${r.toplam ? fmt(r.toplam) : '—'}</span>
-      </div>`).join('')}
-      <div class="rrow head" style="grid-template-columns:1fr 1fr;border-top:1px solid var(--line)">
-        <span>Toplam</span><span class="num in">${fmt(top)}</span></div>
-    </div>
-    <p class="hint">Dükkan aidatları kasaya ve toplam gelire dahildir. Detay için satıra dokun.</p>
-    <div class="btnrow"><button class="btn ghost" id="btn-dukkan-aidat">Tüm dükkanlara aynı aidatı yaz</button></div>
-    <p class="hint">Her dükkana ayrı fiyat vermek için: Daireler → Dükkanlar → dükkana dokun → <b>Aylık aidat</b> alanını değiştir.</p>`;
-    const btn = $('#btn-dukkan-aidat');
-    if (btn) btn.onclick = () => {
-      const v = prompt('Tüm dükkanlar için aylık aidat (₺):', String(dukkanlar[0] ? birimAidat(dukkanlar[0]) : ''));
-      if (v === null) return;
-      const t = Math.max(0, Number(String(v).replace(',', '.')) || 0);
-      dukkanlar.forEach(d => { d.aidat = t; });
-      state.dukkanAidat = t;
-      save(); renderRapor(); toast(`Tüm dükkanlara ${fmt(t)}/ay yazıldı`);
-    };
-  }
-
-  if (state.raporTab === 'kalem') {
-    const toplam = Math.max(1, gider);
-    const gruplar = {};
-    DB.giderler.filter(g => aylar.some(x => x.ay === g.ay)).forEach(g => {
-      const k = g.tur || 'Diğer';
-      gruplar[k] = (gruplar[k] || 0) + Number(g.tutar || 0);
-    });
-    const list = Object.entries(gruplar).sort((a, b) => b[1] - a[1]);
-    el.innerHTML = list.length ? list.map(([k, v]) => `<div class="kalem">
-        <div class="kh"><span>${esc(k)}</span><span>${fmt(v)}</span></div>
-        <div class="kbar"><i style="width:${Math.max(2, Math.round(v / toplam * 100))}%"></i></div>
-        <div class="kp">12 aylık giderin %${Math.round(v / toplam * 100)}'i · aylık ort. ${fmt(v / 12)}</div>
-      </div>`).join('') : `<div class="empty">Son 12 ayda gider kaydı yok.</div>`;
-  }
-}
-
-function raporMetni() {
-  const aylar = raporAylari();
-  const satir = aylar.map(x => `${MONTHS[Number(x.ay.split('-')[1]) - 1]} ${x.ay.slice(0, 4)}: gelir ${fmt(x.gelir)} | gider ${fmt(x.gider)} | net ${fmt(x.net)}`);
-  const gelir = aylar.reduce((s, x) => s + x.gelir, 0);
-  const gider = aylar.reduce((s, x) => s + x.gider, 0);
-  const dukkan = aylar.reduce((s, x) => s + x.dukkan, 0);
-  return `*${DB.bina || 'Bina'}* — Son 12 Ay Gelir/Gider\n\n${satir.join('\n')}\n\nToplam gelir: ${fmt(gelir)} (daire ${fmt(gelir - dukkan)} + dükkan ${fmt(dukkan)})\nToplam gider: ${fmt(gider)}\nNet: ${fmt(gelir - gider)}`;
-}
-
-/* ---------------- çizim: DAİRELER ---------------- */
-function renderDaire() {
-  const el = $('#daire-liste');
-  const tip = state.daireTab === 'dukkan' ? 'dukkan' : 'daire';
-  const grup = birimler().filter(d => ayniTip(d, tip));
-  document.querySelectorAll('#unit-tabs .tab').forEach(t => t.classList.toggle('on', t.dataset.u === tip));
-  const ekle = $('#btn-daire-ekle');
-  if (ekle) ekle.textContent = tip === 'dukkan' ? '+ Dükkan' : '+ Daire';
-  const toplu = $('#btn-dukkan-toplu');
-  if (toplu) toplu.hidden = tip !== 'dukkan';
-  const oz = $('#unit-ozet');
-  if (oz) {
-    const daireSay = birimler().filter(d => d.tip === 'daire').length;
-    const dukkanSay = birimler().filter(d => d.tip === 'dukkan').length;
-    const dukkanAidatTop = birimler().filter(d => d.tip === 'dukkan' && !muafMi(d)).reduce((s, d) => s + birimAidat(d), 0);
-    oz.innerHTML = `<b>${daireSay}</b> daire · <b>${dukkanSay}</b> dükkan — dükkanlardan aylık <b>${fmt(dukkanAidatTop)}</b> aidat beklenir.`;
-  }
-  if (!grup.length) {
-    el.innerHTML = `<div class="empty">Henüz ${tip === 'dukkan' ? 'dükkan' : 'daire'} eklenmedi.</div>`;
-  } else {
-    const rows = [...grup].sort((a, b) => noSirala(a, b));
-    el.innerHTML = rows.map(d => {
-      const bu = odenen(d.id, state.ay);
-      const borc = Math.max(0, aidatTutar(d, state.ay) - bu);
-      return `<div class="item" data-daireduzenle="${d.id}">
-        <span class="dot ${borc > 0 ? 'no' : 'ok'}"></span>
-        <div class="main"><div class="t1">${birimAd(d)} ${esc(d.no)}${d.ad ? ' · ' + esc(d.ad) : ''}${muafMi(d) ? ' <span class="tag">Muaf</span>' : ''}${d.tip === 'dukkan' ? ' <span class="tag aidat-tag">' + fmt(birimAidat(d)) + '/ay</span>' : ''}</div>
-          <div class="t2">${d.tip === 'dukkan' ? 'Aylık ' + fmt(birimAidat(d)) : (d.tel ? esc(d.tel) : 'Telefon yok')} · ${ayKisa(state.ay)}: ${muafMi(d) ? 'aidat muaf' : (bu > 0 ? fmt(bu) + ' ödedi' : 'ödemede yok')}</div></div>
-        <div class="amt ${borc > 0 ? 'minus' : 'plus'}">${borc > 0 ? fmt(borc) : '✓'}</div>
-      </div>`;
-    }).join('');
-  }
-
-  $('#tur-liste').innerHTML = DB.turlar.map(t =>
-    `<span class="chip" data-tursil="${esc(t)}">${esc(t)} <span class="x">✕</span></span>`).join('')
-    || `<p class="hint">Kalem yok.</p>`;
-
-  $('#set-bina').value = DB.bina || '';
-  $('#set-aidat').value = DB.aidat || '';
-  $('#set-gun').value = DB.aidatGun || 5;
-  $('#set-kasa').value = DB.devredenKasa || 0;
-  const muaf = DB.daireler.filter(muafMi);
-  const mo = $('#muaf-ozet');
-  if (mo) mo.innerHTML = muaf.length
-    ? `Aidattan muaf <b>${muaf.length}</b> birim: ${muaf.map(d => birimAd(d) + ' ' + esc(d.no)).join(', ')}. Bu birimler borç ve bekleyen aidat hesabına katılmaz.`
-    : 'Aidattan muaf daire yok. Yönetici dairesi gibi daireleri buradan işaretleyebilirsin.';
-  const dz = $('#dukkan-ayar-ozet');
-  if (dz) {
-    const dukkanlar = birimler().filter(d => d.tip === 'dukkan');
-    const toplam = dukkanlar.filter(d => !muafMi(d)).reduce((s, d) => s + birimAidat(d), 0);
-    dz.innerHTML = dukkanlar.length
-      ? `Toplam <b>${dukkanlar.length}</b> dükkan · aylık dükkan aidatı toplamı <b>${fmt(toplam)}</b>. Her dükkanın aidatını <b>Daireler → Dükkanlar</b> bölümünden tek tek değiştirebilirsin.`
-      : 'Henüz dükkan yok. Daireler → Dükkanlar bölümünden ekleyebilirsin.';
-  }
-  const ml = $('#muaf-liste');
-  if (ml) ml.innerHTML = muaf.map(d =>
-    `<span class="chip" data-muafsil="${d.id}">Daire ${esc(d.no)} <span class="x">✕</span></span>`).join('');
-}
-
-function renderAll() {
-  if (state.view === 'ozet') renderOzet();
-  if (state.view === 'aidat') renderAidat();
-  if (state.view === 'gider') renderGider();
-  if (state.view === 'borc') renderBorc();
-  if (state.view === 'rapor') renderRapor();
-  if (state.view === 'daire') renderDaire();
-}
-
-/* ---------------- gezinme ---------------- */
-function git(v) {
-  state.view = v;
-  ['ozet', 'aidat', 'gider', 'borc', 'rapor', 'daire'].forEach(k => { $('#v-' + k).hidden = k !== v; });
-  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  window.scrollTo({ top: 0 });
-  renderAll();
-}
-
-/* ---------------- toast ---------------- */
-let toastT;
-function toast(msg) {
-  const t = $('#toast');
-  t.textContent = msg; t.classList.add('on');
-  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 1800);
-}
-
-/* ---------------- sheet ---------------- */
-function sheet(title, html) {
-  $('#sheet-title').textContent = title;
-  $('#sheet-body').innerHTML = html;
-  $('#sheet-wrap').hidden = false;
-}
-function sheetKapat() {
-  $('#sheet-wrap').hidden = true;
-  $('#sheet-body').innerHTML = '';
-}
-
-/* =====================================================
-   OLAYLAR
-   ===================================================== */
-
-/* gezinme */
-$('#nav').addEventListener('click', e => {
-  const b = e.target.closest('button[data-v]');
-  if (b) git(b.dataset.v);
-});
-$('#sheet-bg').addEventListener('click', sheetKapat);
-
-/* ay okları */
-$('#ay-geri').onclick = () => { state.ay = ayKaydir(state.ay, -1); renderOzet(); };
-$('#ay-ileri').onclick = () => { state.ay = ayKaydir(state.ay, 1); renderOzet(); };
-$('#aidat-tabs').addEventListener('click', e => {
-  const t = e.target.closest('.tab[data-tip]'); if (!t) return;
-  state.aidatTip = t.dataset.tip;
-  document.querySelectorAll('#aidat-tabs .tab').forEach(x => x.classList.toggle('on', x === t));
-  renderAidat();
-});
-$('#a-geri').onclick = () => { state.ayAidat = ayKaydir(state.ayAidat, -1); renderAidat(); };
-$('#a-ileri').onclick = () => { state.ayAidat = ayKaydir(state.ayAidat, 1); renderAidat(); };
-$('#g-geri').onclick = () => { state.ayGider = ayKaydir(state.ayGider, -1); renderGider(); };
-$('#g-ileri').onclick = () => { state.ayGider = ayKaydir(state.ayGider, 1); renderGider(); };
-
-/* ---- ÖZET: borçluya dokun → ödeme al ---- */
-$('#ozet-borc').addEventListener('click', e => {
-  const it = e.target.closest('[data-borc]');
-  if (it) aidatDialog(it.dataset.borc, state.ay);
-});
-
-/* ---- AİDAT ---- */
-$('#aidat-liste').addEventListener('click', e => {
-  const tick = e.target.closest('[data-tick]');
-  if (tick) { aidatToggle(tick.dataset.tick, state.ayAidat); return; }
-  const det = e.target.closest('[data-detay]');
-  if (det) aidatDialog(det.dataset.detay, state.ayAidat);
-});
-
-function aidatToggle(daireId, ay) {
-  const d = daireBul(daireId); if (!d) return;
-  if (muafMi(d)) return toast(`Daire ${d.no} aidattan muaf`);
-  const o = odenen(daireId, ay);
-  if (DB.aidat > 0 && o >= DB.aidat) {
-    // ödemeyi geri al
-    DB.odemeler = DB.odemeler.filter(x => !(x.daireId === daireId && x.ay === ay));
-    save(); renderAll(); toast(`Daire ${d.no} ödemesi geri alındı`);
-  } else if (DB.aidat > 0) {
-    const kalan = DB.aidat - o;
-    DB.odemeler.push({ id: uid(), daireId, ay, tutar: kalan, tarih: today() });
-    save(); renderAll(); toast(`Daire ${d.no} · ${fmt(kalan)} tahsil edildi`);
-  } else {
-    toast('Önce ayarlardan aidat tutarını gir');
-  }
-}
-
-$('#btn-toplu').onclick = () => {
-  const ay = state.ayAidat;
-  if (DB.aidat <= 0) return toast('Önce ayarlardan aidat tutarını gir');
-  let n = 0, tut = 0;
-  birimler().filter(d => ayniTip(d, state.aidatTip === 'dukkan' ? 'dukkan' : 'daire')).forEach(d => {
-    const kalan = aidatTutar(d, ay) - odenen(d.id, ay);
-    if (kalan > 0) { DB.odemeler.push({ id: uid(), daireId: d.id, ay, tutar: kalan, tarih: today() }); n++; tut += kalan; }
-  });
-  save(); renderAll();
-  toast(n ? `${n} birimden ${fmt(tut)} tahsil edildi (kasaya eklendi)` : 'Tümü zaten ödedi');
-};
-
-function aidatDialog(daireId, ay) {
-  const d = daireBul(daireId); if (!d) return;
-  const odemeler = DB.odemeler.filter(o => o.daireId === daireId && o.ay === ay);
-  const o = odemeler.reduce((s, x) => s + Number(x.tutar), 0);
-  const tar = aidatTutar(d, ay);
-  const kalan = Math.max(0, tar - o);
-  sheet(`${birimAd(d)} ${d.no}`, `
-    <p class="hint">${esc(d.ad || 'İsim yok')} · ${ayAdi(ay)}${d.tip === 'dukkan' ? ' · aylık ' + fmt(birimAidat(d)) : ''}</p>
-    ${d.tip === 'dukkan' ? `<div class="btnrow" style="margin:10px 0 4px">
-      <button class="btn ghost" id="dl-aidat">Aylık aidatı değiştir (${fmt(birimAidat(d))})</button>
-    </div>` : ''}
-    <div class="panel row" style="margin-top:6px">
-      <div><div class="clabel">Bu ay ödenen</div><div class="cval sm ${tar > 0 && o >= tar ? 'green-text' : ''}">${fmt(o)}</div></div>
-      <div style="text-align:right"><div class="clabel">Kalan</div><div class="cval sm red-text">${fmt(kalan)}</div></div>
-    </div>
-    ${kalan > 0 ? `
-    <label class="field"><span>Tahsil edilecek tutar (₺)</span>
-      <input id="dl-tutar" type="number" inputmode="decimal" step="1" min="1" value="${kalan}"></label>
-    <button class="btn" id="dl-ode" style="width:100%">Ödeme al</button>` : ''}
-    ${odemeler.length ? `<h2 class="sect">Ödeme geçmişi</h2><div class="list">${odemeler.map(x =>
-      `<div class="item"><span class="dot ok"></span><div class="main"><div class="t1">${fmt(x.tutar)}</div>
-        <div class="t2">${fmtTarih(x.tarih)}</div></div>
-        <button class="iconbtn" data-sil="${x.id}" style="color:#d1495b">✕</button></div>`).join('')}</div>` : ''}
-    ${d.tel ? `<div class="btnrow"><button class="btn ghost" id="dl-wa">WhatsApp'tan hatırlat</button></div>` : ''}
-  `);
-
-  const ode = $('#dl-ode');
-  if (ode) ode.onclick = () => {
-    const t = Number($('#dl-tutar').value);
-    if (!(t > 0)) return toast('Geçerli bir tutar gir');
-    DB.odemeler.push({ id: uid(), daireId, ay, tutar: t, tarih: today() });
-    save(); sheetKapat(); renderAll(); toast(`${fmt(t)} tahsil edildi`);
-  };
-  const sil = $('#sheet-body').querySelector('[data-sil]');
-  if (sil) sil.onclick = () => {
-    DB.odemeler = DB.odemeler.filter(x => x.id !== sil.dataset.sil);
-    save(); sheetKapat(); renderAll(); toast('Ödeme silindi');
-  };
-  const aidatBtn = $('#dl-aidat');
-  if (aidatBtn) aidatBtn.onclick = () => {
-    const yeni = prompt(`Dükkan ${d.no} için aylık aidat (₺):`, String(birimAidat(d)));
-    if (yeni === null) return;
-    const t = Math.max(0, Number(String(yeni).replace(',', '.')) || 0);
-    d.aidat = t; state.dukkanAidat = t;
-    save(); sheetKapat(); renderAll(); toast(`Dükkan ${d.no} aidatı ${fmt(t)} olarak güncellendi`);
-  };
-  const wa = $('#dl-wa');
-  if (wa) wa.onclick = () => {
-    const tel = d.tel.replace(/[^0-9]/g, '').replace(/^0/, '90');
-    const msg = encodeURIComponent(
-      `Sayın ${d.ad || 'sakinimiz'}, ${DB.bina || 'binamız'} Daire ${d.no} için ${ayAdi(ay)} ayı aidat borcunuz ${fmt(kalan)} görünmektedir. Bilginize sunarız.`
-    );
-    window.open(`https://wa.me/${tel}?text=${msg}`, '_blank');
-  };
-}
-
-/* ---- GİDER ---- */
-$('#btn-gider-ekle').onclick = () => giderDialog(null);
-$('#gider-liste').addEventListener('click', e => {
-  const it = e.target.closest('[data-gider]');
-  if (it) giderDialog(it.dataset.gider);
-});
-
-/* gider kalemi önerileri: kayıtlı kalemler + geçmişte yazılanlar */
-function kalemOnerileri(ekle) {
-  const set = new Set([...DB.turlar, ...DB.giderler.map(g => g.tur).filter(Boolean)]);
-  if (ekle) set.add(ekle);
-  return [...set];
-}
-
-function giderDialog(id) {
-  const g = id ? DB.giderler.find(x => x.id === id) : null;
-  const ay = g?.ay || state.ayGider;
-  sheet(g ? 'Gideri düzenle' : 'Yeni gider', `
-    <label class="field"><span>Tutar (₺)</span>
-      <input id="gd-tutar" type="number" inputmode="decimal" step="1" min="0" value="${g ? g.tutar : ''}" placeholder="0"></label>
-    <label class="field"><span>Kalem <em class="opt">— kendin yazabilirsin</em></span>
-      <input id="gd-tur" list="gd-tur-onerileri" value="${esc(g?.tur || '')}" placeholder="Örn. Elektrik, Temizlik, Asansör">
-      <datalist id="gd-tur-onerileri">${kalemOnerileri(g?.tur).map(t => `<option value="${esc(t)}">`).join('')}</datalist></label>
-    <label class="field"><span>Açıklama</span>
-      <input id="gd-aciklama" value="${esc(g?.aciklama || '')}" placeholder="Örn. Ekim elektrik faturası"></label>
-    <label class="field"><span>Tarih</span>
-      <input id="gd-tarih" type="date" value="${g?.tarih || today()}"></label>
-    <button class="btn danger" id="gd-kaydet" style="width:100%">${g ? 'Kaydet' : 'Gider ekle'}</button>
-    ${g ? `<div class="btnrow"><button class="btn ghost danger" id="gd-sil">Gideri sil</button></div>` : ''}
-  `);
-  $('#gd-kaydet').onclick = () => {
-    const tutar = Number($('#gd-tutar').value);
-    if (!(tutar > 0)) return toast('Geçerli bir tutar gir');
-    const tarih = $('#gd-tarih').value || today();
-    const tur = $('#gd-tur').value.trim() || 'Diğer';
-    const kayit = {
-      id: g?.id || uid(), ay: tarih.slice(0, 7),
-      tur,
-      aciklama: $('#gd-aciklama').value.trim(),
-      tutar, tarih
-    };
-    if (g) DB.giderler = DB.giderler.map(x => x.id === g.id ? kayit : x);
-    else DB.giderler.push(kayit);
-    // yazılan kalem, kalem listesinde yoksa eklenir
-    if (!DB.turlar.includes(tur)) DB.turlar.push(tur);
-    save(); sheetKapat(); renderAll(); toast(g ? 'Gider güncellendi' : `${fmt(tutar)} gider eklendi`);
-  };
-  if (g) $('#gd-sil').onclick = () => {
-    DB.giderler = DB.giderler.filter(x => x.id !== g.id);
-    save(); sheetKapat(); renderAll(); toast('Gider silindi');
-  };
-}
-
-/* ---- RAPOR ---- */
-$('#rapor-tabs').addEventListener('click', e => {
-  const t = e.target.closest('.tab[data-r]'); if (!t) return;
-  state.raporTab = t.dataset.r;
-  renderRapor();
-});
-$('#rapor-icerik').addEventListener('click', e => {
-  const a = e.target.closest('[data-raporay]');
-  if (a) { state.ay = a.dataset.raporay; git('ozet'); }
-});
-$('#btn-rapor-cikis').onclick = kaydetCik;
-$('#btn-rapor-kopyala').onclick = async () => {
-  const metin = raporMetni();
-  try {
-    if (navigator.share) { await navigator.share({ text: metin }); return; }
-    await navigator.clipboard.writeText(metin);
-    toast("Rapor kopyalandı, WhatsApp'a yapıştırabilirsin");
-  } catch (err) {
-    if (navigator.clipboard) { try { await navigator.clipboard.writeText(metin); toast('Rapor kopyalandı'); return; } catch (e) {} }
-    toast('Kopyalanamadı');
-  }
-};
-
-/* ---- KAYDET & ÇIK ---- */
-['#btn-cikis', '#btn-cikis2', '#btn-cikis3', '#btn-kaydet-cik'].forEach(sel => {
-  const el = $(sel); if (el) el.onclick = kaydetCik;
-});
-
-/* ---- LİSANS ---- */
-['#btn-lisans', '#link-lisans'].forEach(sel => {
-  const el = $(sel); if (el) el.onclick = lisansDialog;
-});
-
-/* ---- BİRİM TİPİ (Daire / Dükkan) ---- */
-$('#daire-tabs').addEventListener('click', () => {
-  const t = document.querySelector('#daire-tabs .tab.on');
-  const ut = $('#unit-tabs');
-  const uo = $('#unit-ozet');
-  if (ut) ut.style.display = (t && t.dataset.t === 'liste') ? '' : 'none';
-  if (uo) uo.style.display = (t && t.dataset.t === 'liste') ? '' : 'none';
-});
-
-$('#unit-tabs').addEventListener('click', e => {
-  const t = e.target.closest('.tab[data-u]'); if (!t) return;
-  state.daireTab = t.dataset.u;
-  renderDaire();
-});
-$('#borc-tabs').addEventListener('click', e => {
-  const t = e.target.closest('.tab[data-tip]');
-  if (t) { state.borcTip = t.dataset.tip; renderBorc(); }
-});
-
-/* ---- BORÇ DURUMU ---- */
-$('#borc-tabs').addEventListener('click', e => {
-  const tipBtn = e.target.closest('.tab[data-tip]');
-  if (tipBtn) { state.borcTip = tipBtn.dataset.tip; renderBorc(); return; }
-  const t = e.target.closest('.tab[data-b]'); if (!t) return;
-  state.borcTab = t.dataset.b;
-  renderBorc();
-});
-$('#borc-liste').addEventListener('click', e => {
-  const b = e.target.closest('[data-borclu]');
-  if (b) { borcDialog(b.dataset.borclu); return; }
-  const a = e.target.closest('[data-aydetay]');
-  if (a) { state.ay = a.dataset.aydetay; git('ozet'); }
-});
-
-/* ---- DAİRELER ---- */
-$('#btn-daire-ekle').onclick = () => daireDialog(null);
-$('#btn-dukkan-toplu').onclick = dukkanTopluEkle;
-$('#btn-dukkan-toplu2').onclick = dukkanTopluEkle;
-$('#daire-liste').addEventListener('click', e => {
-  const it = e.target.closest('[data-daireduzenle]');
-  if (it) daireDialog(it.dataset.daireduzenle);
-});
-
-function daireDialog(id) {
-  const d = id ? daireBul(id) : null;
-  const tip = d ? (d.tip || 'daire') : (state.daireTab === 'dukkan' ? 'dukkan' : 'daire');
-  const soz = tip === 'dukkan' ? 'Dükkan' : 'Daire';
-  const ayni = DB.daireler.filter(x => (x.tip || 'daire') === tip);
-  const sonraki = (Math.max(0, ...ayni.map(x => Number(x.no) || 0)) + 1);
-  sheet(d ? `${soz} kaydını düzenle` : `Yeni ${soz.toLowerCase()}`, `
-    <label class="field"><span>${soz} no <em class="opt">${tip === 'dukkan' ? '— harf, tire, kesir serbest (ör. 1/A, 2, 3B)' : ''}</em></span>
-      <input id="dr-no" value="${esc(d?.no ?? sonraki)}" ${tip === 'dukkan' ? 'type="text"' : 'inputmode="numeric"'}
-        placeholder="${tip === 'dukkan' ? 'Örn. 1/A' : ''}"></label>
-    <label class="field"><span>${tip === 'dukkan' ? 'Dükkan / kiracı adı' : 'Sakin adı'}</span>
-      <input id="dr-ad" value="${esc(d?.ad || '')}" placeholder="${tip === 'dukkan' ? 'Örn. Market' : 'Ad Soyad'}"></label>
-    <label class="field"><span>Aylık aidat (₺) <em class="opt">${tip === 'dukkan' ? '— sadece bu dükkan' : '— boş bırakırsan genel aidat'}</em></span>
-      <input id="dr-aidat" type="number" inputmode="decimal" step="0.01" min="0"
-        value="${d ? (d.aidat ?? birimAidat(d)) : (tip === 'dukkan' ? (state.dukkanAidat ?? '') : (DB.aidat || ''))}"
-        placeholder="${tip === 'dukkan' ? 'Örn. 1750' : String(DB.aidat || 0)}"></label>
-    ${tip === 'dukkan' && !d ? `<label class="check" style="margin-top:-4px">
-      <input type="checkbox" id="dr-tumune">
-      <span>Bu tutarı tüm dükkanlara uygula <small>İşaretlemezsen tutar yalnızca bu dükkana yazılır; her dükkanın fiyatı ayrı olabilir</small></span>
-    </label>` : ''}
-    <label class="field"><span>Telefon</span>
-      <input id="dr-tel" type="tel" value="${esc(d?.tel || '')}" placeholder="05xx xxx xx xx"></label>
-    <label class="check">
-      <input type="checkbox" id="dr-muaf" ${d?.muaf ? 'checked' : ''}>
-      <span>Aidattan muaf <small>${tip === 'dukkan' ? 'Dükkan aidat ödemiyorsa işaretle' : 'Yönetici dairesi vb. — borç ve bekleyen tutara dahil edilmez'}</small></span>
-    </label>
-    <button class="btn" id="dr-kaydet" style="width:100%">${d ? 'Kaydet' : soz + ' ekle'}</button>
-    ${d ? `<div class="btnrow"><button class="btn ghost danger" id="dr-sil">${soz} kaydını sil</button></div>` : ''}
-  `);
-  $('#dr-kaydet').onclick = () => {
-    const no = $('#dr-no').value.trim();
-    if (!no) return toast(`${soz} no gir`);
-    const cakisan = DB.daireler.find(x => (x.tip || 'daire') === tip && x.no.toLocaleLowerCase('tr') === no.toLocaleLowerCase('tr') && x.id !== d?.id);
-    if (cakisan) return toast(`Bu numara zaten var: ${soz} ${no}`);
-    const aidatDeger = $('#dr-aidat').value.trim();
-    const kayit = {
-      id: d?.id || uid(), tip, no, ad: $('#dr-ad').value.trim(), tel: $('#dr-tel').value.trim(),
-      muaf: $('#dr-muaf').checked,
-      aidat: aidatDeger === '' ? (d ? (d.aidat ?? birimAidat(d)) : (tip === 'dukkan' ? 0 : DB.aidat)) : Math.max(0, Number(String(aidatDeger).replace(',', '.').replace(/\s/g, '')) || 0)
-    };
-    if (d) DB.daireler = DB.daireler.map(x => x.id === d.id ? kayit : x);
-    else DB.daireler.push(kayit);
-    if (tip === 'dukkan') {
-      const tumune = $('#dr-tumune') && $('#dr-tumune').checked;
-      if (tumune) {
-        DB.daireler.forEach(x => { if (x.tip === 'dukkan') x.aidat = kayit.aidat; });
-      } else if (!d) {
-        state.dukkanAidat = kayit.aidat;
-      }
-    }
-    save(); sheetKapat(); renderAll();
-    toast(d ? `${soz} güncellendi` : `${soz} eklendi${tip === 'dukkan' ? ' · aylık ' + fmt(kayit.aidat) : ''}`);
-  };
-  if (d) $('#dr-sil').onclick = () => {
-    if (!confirm(`${birimAd(d)} ${d.no} ve tüm ödeme kayıtları silinsin mi?`)) return;
-    DB.daireler = DB.daireler.filter(x => x.id !== d.id);
-    DB.odemeler = DB.odemeler.filter(o => o.daireId !== d.id);
-    save(); sheetKapat(); renderAll(); toast(`${birimAd(d)} silindi`);
-  };
-}
-
-/* sekmeler */
-$('#daire-tabs').addEventListener('click', e => {
-  const t = e.target.closest('.tab'); if (!t) return;
-  document.querySelectorAll('#daire-tabs .tab').forEach(x => x.classList.toggle('on', x === t));
-  const k = t.dataset.t;
-  $('#daire-liste').hidden = k !== 'liste';
-  $('#daire-giderler').hidden = k !== 'giderler';
-  $('#daire-ayarlar').hidden = k !== 'ayarlar';
-});
-
-/* gider kalemleri */
-$('#btn-tur-ekle').onclick = () => {
-  const t = prompt('Yeni gider kalemi adı (birden fazlaysa virgülle ayır):', '');
-  if (t === null) return;
-  const adlar = t.split(',').map(x => x.trim()).filter(Boolean);
-  if (!adlar.length) return;
-  adlar.forEach(ad => { if (!DB.turlar.includes(ad)) DB.turlar.push(ad); });
-  save(); renderDaire(); toast(`${adlar.length} kalem eklendi`);
-};
-$('#btn-tur-temizle').onclick = () => {
-  if (!DB.turlar.length) return toast('Liste zaten boş');
-  if (!confirm('Kalem listesi tamamen boşaltılsın mı?\n\nGider kayıtların ve geçmiş tutarların silinmez; sadece listedeki kalemler kaldırılır. Bundan sonra kalemleri kendin yazabilirsin.')) return;
-  DB.turlar = [];
-  save(); renderDaire(); toast('Kalem listesi temizlendi — artık kendin yazabilirsin');
-};
-$('#tur-liste').addEventListener('click', e => {
-  const c = e.target.closest('[data-tursil]'); if (!c) return;
-  const ad = c.dataset.tursil;
-  if (!confirm(`"${ad}" kalemi listeden kaldırılsın mı?`)) return;
-  DB.turlar = DB.turlar.filter(x => x !== ad);
-  save(); renderDaire();
-});
-
-/* ayarlar */
-$('#btn-muaf-sec').onclick = () => muafDialog();
-$('#muaf-liste').addEventListener('click', e => {
-  const c = e.target.closest('[data-muafsil]'); if (!c) return;
-  const d = daireBul(c.dataset.muafsil); if (!d) return;
-  d.muaf = false; save(); renderDaire(); toast(`${birimAd(d)} ${d.no} artık aidat ödüyor`);
-});
-
-/* Birden fazla dükkanı tek seferde ekleme */
-function dukkanTopluEkle() {
-  const sonraki = Math.max(0, ...DB.daireler.filter(x => x.tip === 'dukkan').map(x => Number(x.no) || 0)) + 1;
-  sheet('Dükkanları topluca ekle', `
-    <p class="hint">Her satıra bir dükkan yaz. İstersen fiyatı da ekle:<br>
-      <b>1/A Market 1500</b> · <b>2 Eczane 1200,50</b> · <b>3B Kafe</b> (fiyat yazmazsan varsayılan uygulanır)</p>
-    <label class="field"><span>Dükkanlar</span>
-      <textarea id="toplu-metin" rows="6" placeholder="1/A Market 1500&#10;2 Eczane 1200&#10;3B Kafe 2200"></textarea></label>
-    <label class="field"><span>Fiyat yazılmayanlara uygulanacak aylık aidat (₺)</span>
-      <input id="toplu-aidat" type="number" inputmode="decimal" step="0.01" min="0"
-        value="${state.dukkanAidat ?? ''}" placeholder="Örn. 1500"></label>
-    <label class="field"><span>Başlangıç numarası (boş satır/no için)</span>
-      <input id="toplu-bas" type="number" inputmode="numeric" min="1" value="${sonraki}"></label>
-    <button class="btn" id="toplu-ekle" style="width:100%">Dükkanları ekle</button>
-  `);
-  $('#toplu-ekle').onclick = () => {
-    const satirlar = $('#toplu-metin').value.split('\n').map(x => x.trim()).filter(Boolean);
-    if (!satirlar.length) return toast('En az bir dükkan yaz');
-    const varsayilan = isFinite(sayiCoz($('#toplu-aidat').value)) ? Math.max(0, sayiCoz($('#toplu-aidat').value)) : 0;
-    let no = Math.max(1, Number($('#toplu-bas').value) || sonraki);
-    let eklenen = 0, atlanan = 0;
-    satirlar.forEach(satir => {
-      // sadece sayı yazılmışsa o bir no'dur; aksi halde ilk kelime no kabul edilir
-      let parcalar = satir.split(/\s+/);
-      let noDeger, kalan;
-      if (parcalar.length === 1 && !isFinite(sayiCoz(parcalar[0]))) {
-        noDeger = String(no++); kalan = parcalar;
-      } else {
-        noDeger = parcalar.shift(); kalan = parcalar;
-      }
-      // sonda fiyat var mı?
-      let aidat = varsayilan;
-      if (kalan.length) {
-        const son = kalan[kalan.length - 1].replace(/[^0-9.,]/g, '');
-        if (son && isFinite(sayiCoz(son))) { aidat = Math.max(0, sayiCoz(son)); kalan.pop(); }
-      }
-      const ad = kalan.join(' ').trim();
-      const varMi = DB.daireler.some(x => x.tip === 'dukkan' && String(x.no).toLocaleLowerCase('tr') === String(noDeger).toLocaleLowerCase('tr'));
-      if (varMi) { atlanan++; return; }
-      DB.daireler.push({ id: uid(), tip: 'dukkan', no: String(noDeger), ad, tel: '', muaf: false, aidat });
-      eklenen++;
-    });
-    save(); sheetKapat(); renderAll();
-    toast(`${eklenen} dükkan eklendi${atlanan ? ' · ' + atlanan + ' zaten vardı' : ''}`);
-  };
-}
-
-function muafDialog() {
-  if (!DB.daireler.length) return toast('Önce daire ekle');
-  const rows = [...DB.daireler].sort((a, b) => noSirala(a, b));
-  sheet('Aidattan muaf daireler', `
-    <p class="hint">İşaretlediğin daireler (örn. yönetici dairesi) hiçbir ay için borçlu sayılmaz.</p>
-    <div class="list">${rows.map(d => `
-      <label class="item" style="cursor:pointer">
-        <input type="checkbox" class="muaf-cb" value="${d.id}" ${d.muaf ? 'checked' : ''}
-          style="width:20px;height:20px;flex:none;accent-color:#0f2a43">
-        <div class="main"><div class="t1">${birimAd(d)} ${esc(d.no)}${d.tip === 'dukkan' ? ' <span class="tag aidat-tag">' + fmt(birimAidat(d)) + '/ay</span>' : ''}</div>
-          <div class="t2">${esc(d.ad || 'İsim yok')}</div></div>
-      </label>`).join('')}</div>
-    <button class="btn" id="muaf-kaydet" style="width:100%;margin-top:14px">Kaydet</button>
-  `);
-  $('#muaf-kaydet').onclick = () => {
-    const secili = new Set([...document.querySelectorAll('.muaf-cb:checked')].map(x => x.value));
-    DB.daireler.forEach(d => { d.muaf = secili.has(d.id); });
-    save(); sheetKapat(); renderAll(); toast('Muaf listesi güncellendi');
-  };
-}
-
-$('#btn-ayar-kaydet').onclick = () => {
-  DB.bina = $('#set-bina').value.trim();
-  DB.aidat = Math.max(0, Number($('#set-aidat').value) || 0);
-  DB.aidatGun = Math.min(28, Math.max(1, Number($('#set-gun').value) || 5));
-  DB.devredenKasa = Number($('#set-kasa').value) || 0;
-  save(); renderAll(); toast('Ayarlar kaydedildi');
-};
-
-/* yedek */
-$('#btn-yedek').onclick = () => {
-  const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `aidat-yedek-${today()}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-  toast('Yedek indirildi');
-};
-$('#btn-geri-yukle').onclick = () => $('#dosya').click();
-$('#dosya').onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      const d = JSON.parse(r.result);
-      if (!Array.isArray(d.daireler)) throw new Error('geçersiz');
-      d.turlar = Array.isArray(d.turlar) ? d.turlar : [];
-      d.odemeler ||= []; d.giderler ||= [];
-      save(d); renderAll(); toast('Yedek geri yüklendi');
-    } catch (err) { toast('Dosya okunamadı'); }
-    e.target.value = '';
-  };
-  r.readAsText(f);
-};
-$('#btn-ornek').onclick = () => {
-  if (!confirm('Mevcut veriler örnek veriyle değiştirilsin mi?')) return;
-  save(ornekVeri()); renderAll(); toast('Örnek veri yüklendi');
-};
-$('#btn-sifirla').onclick = () => {
-  if (!confirm('Tüm veriler silinsin mi?\n\nDaireler, dükkanlar, ödemeler, giderler ve gider kalemleri silinir. Bu işlem geri alınamaz.')) return;
-  save(BOS_VERI());
-  renderAll(); toast('Tüm veriler ve gider kalemleri silindi');
-};
-
-/* ---------------- başlat ---------------- */
-kayitDurumCiz();
-lisansKisa();
-renderAll();
-git('ozet');
-
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
-}
+  <div class="toast" id="toast"></div>
+</div>
+<script src="app.js?v=18"></script>
+</body>
+</html>
